@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sprite Sheet Editor</title>
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
   <header class="app-header">
@@ -57,6 +57,10 @@
       <div class="panel-title">3. 편집 / 출력</div>
       <div class="panel-body controls">
         <div class="preview-box"><canvas id="previewCanvas"></canvas></div>
+        <div class="grid-2">
+          <label class="check-label"><input id="showPreviewFrameInput" type="checkbox" checked> 프레임 테두리 표시</label>
+          <label class="check-label"><input id="showPreviewCenterInput" type="checkbox" checked> 중앙선 표시</label>
+        </div>
 
         <div>
           <div class="sub-title">선택 프레임 원본 위치 보정</div>
@@ -107,6 +111,6 @@
       </div>
     </section>
   </main>
-  <script src="src/app.js?v=12" defer></script>
+  <script src="src/app.js?v=13" defer></script>
 </body>
 </html>
