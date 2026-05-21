@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sprite Sheet Editor</title>
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
   <header class="app-header">
@@ -69,6 +69,11 @@
             </div>
             <button id="nudgeDownButton" type="button">▼</button>
           </div>
+          <div class="align-row">
+            <button id="centerXButton" type="button">좌우 가운데</button>
+            <button id="centerYButton" type="button">상하 가운데</button>
+            <button id="centerBothButton" type="button" class="primary">가운데 정렬</button>
+          </div>
           <div class="grid-2">
             <label>이동 단위(px) <input id="nudgeStepInput" type="number" min="1" value="1"></label>
             <label>현재 보정 <input id="selectedShiftInput" type="text" value="선택 없음" readonly></label>
@@ -102,6 +107,6 @@
       </div>
     </section>
   </main>
-  <script src="src/app.js?v=10" defer></script>
+  <script src="src/app.js?v=12" defer></script>
 </body>
 </html>
