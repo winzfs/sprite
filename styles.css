@@ -31,6 +31,7 @@ button {
   background: var(--panel-2);
   color: var(--text);
   cursor: pointer;
+  touch-action: manipulation;
   transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
 }
 
@@ -39,7 +40,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 button.primary { background: linear-gradient(180deg, var(--primary), var(--primary-strong)); color: #06101f; border-color: transparent; font-weight: 700; }
 button.danger { color: #ffd6d6; border-color: rgba(255, 107, 107, 0.5); }
 
-input[type="number"], input[type="file"], input[type="color"] {
+input[type="number"], input[type="file"], input[type="color"], input[type="text"] {
   width: 100%;
   margin-top: 6px;
   border: 1px solid var(--line);
@@ -102,6 +103,35 @@ label {
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .button-row button { flex: 1 1 auto; }
+
+.nudge-pad {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-areas:
+    ". up ."
+    "left reset right"
+    ". down .";
+  gap: 8px;
+  width: min(100%, 280px);
+  margin: 0 auto 10px;
+}
+
+.nudge-pad > button {
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+#nudgeUpButton { grid-area: up; }
+#nudgeLeftButton { grid-area: left; }
+#nudgeResetButton { grid-area: reset; font-size: 12px; line-height: 1.2; }
+#nudgeRightButton { grid-area: right; }
+#nudgeDownButton { grid-area: down; }
+
+.nudge-pad .button-row { display: contents; }
+.nudge-pad .button-row button { flex: none; }
 
 .hint, .status { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .status { min-height: 20px; color: #b8ffcf; }
@@ -168,6 +198,7 @@ label {
 }
 
 .frame-card.selected, .output-card.selected { outline: 2px solid var(--primary); border-color: var(--primary); }
+.frame-card.shifted, .output-card.shifted { border-color: #fbbf24; }
 .frame-card canvas, .output-card canvas { image-rendering: pixelated; max-width: 44px; max-height: 44px; }
 .frame-index { position: absolute; left: 4px; top: 3px; padding: 1px 4px; border-radius: 999px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 10px; }
 .drop-target { outline: 2px dashed var(--primary); }
@@ -175,4 +206,22 @@ label {
 @media (max-width: 1160px) {
   .app-layout { grid-template-columns: 1fr; }
   .stage-wrap { height: auto; }
+}
+
+@media (max-width: 520px) {
+  .app-header { padding: 16px; }
+  .app-layout { padding: 10px; gap: 10px; }
+  .panel-body { padding: 12px; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .button-row { gap: 6px; }
+  .button-row button { flex: 1 1 calc(50% - 6px); }
+  .nudge-pad {
+    width: min(100%, 240px);
+    gap: 6px;
+  }
+  .nudge-pad > button {
+    min-height: 46px;
+    padding: 8px 6px;
+  }
+  #nudgeResetButton { font-size: 11px; }
 }
