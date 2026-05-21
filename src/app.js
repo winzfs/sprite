@@ -7,8 +7,10 @@ const dom = {
   offsetXInput: document.getElementById('offsetXInput'),
   offsetYInput: document.getElementById('offsetYInput'),
   gapXInput: document.getElementById('gapXInput'),
+  gapYInput: document.getElementById('gapYInput'),
   zoomInput: document.getElementById('zoomInput'),
   autoDetectButton: document.getElementById('autoDetectButton'),
+  fitWholeButton: document.getElementById('fitWholeButton'),
   sliceButton: document.getElementById('sliceButton'),
   resetButton: document.getElementById('resetButton'),
   sourceCanvas: document.getElementById('sourceCanvas'),
@@ -19,6 +21,8 @@ const dom = {
   stopButton: document.getElementById('stopButton'),
   addSelectedButton: document.getElementById('addSelectedButton'),
   addAllButton: document.getElementById('addAllButton'),
+  moveOutputLeftButton: document.getElementById('moveOutputLeftButton'),
+  moveOutputRightButton: document.getElementById('moveOutputRightButton'),
   removeSelectedOutputButton: document.getElementById('removeSelectedOutputButton'),
   clearOutputButton: document.getElementById('clearOutputButton'),
   exportButton: document.getElementById('exportButton'),
@@ -32,7 +36,7 @@ const previewCtx = dom.previewCanvas.getContext('2d');
 
 const state = {
   image: null,
-  imageBitmapUrl: '',
+  imageObjectUrl: '',
   frames: [],
   selectedFrameIds: new Set(),
   outputFrameIds: [],
@@ -57,33 +61,30 @@ function clamp(value, min, max) {
 }
 
 function getSettings() {
-  const frameWidth = Math.max(1, readNumber(dom.frameWidthInput, 32));
-  const frameHeight = Math.max(1, readNumber(dom.frameHeightInput, 32));
-  const offsetX = Math.max(0, readNumber(dom.offsetXInput, 0));
-  const offsetY = Math.max(0, readNumber(dom.offsetYInput, 0));
-  const gapX = Math.max(0, readNumber(dom.gapXInput, 0));
-  const gapY = Math.max(0, readNumber(dom.gapYInput, 0));
-  const cols = Math.max(1, readNumber(dom.sourceColsInput, 1));
-  const rows = Math.max(1, readNumber(dom.sourceRowsInput, 1));
-
-  return { frameWidth, frameHeight, offsetX, offsetY, gapX, gapY, cols, rows };
+  return {
+    frameWidth: Math.max(1, readNumber(dom.frameWidthInput, 32)),
+    frameHeight: Math.max(1, readNumber(dom.frameHeightInput, 32)),
+    cols: Math.max(1, readNumber(dom.sourceColsInput, 1)),
+    rows: Math.max(1, readNumber(dom.sourceRowsInput, 1)),
+    offsetX: Math.max(0, readNumber(dom.offsetXInput, 0)),
+    offsetY: Math.max(0, readNumber(dom.offsetYInput, 0)),
+    gapX: Math.max(0, readNumber(dom.gapXInput, 0)),
+    gapY: Math.max(0, readNumber(dom.gapYInput, 0)),
+  };
 }
 
-async function loadImage(file) {
+function loadImage(file) {
   if (!file) return;
 
-  if (state.imageBitmapUrl) {
-    URL.revokeObjectURL(state.imageBitmapUrl);
-    state.imageBitmapUrl = '';
-  }
+  stopPlayback();
+  if (state.imageObjectUrl) URL.revokeObjectURL(state.imageObjectUrl);
 
   const url = URL.createObjectURL(file);
   const image = new Image();
-  image.decoding = 'async';
   image.onload = () => {
     state.image = image;
-    state.imageBitmapUrl = url;
-    autoDetectGrid();
+    state.imageObjectUrl = url;
+    fitWholeSheet();
     sliceFrames();
     setStatus(`${file.name} 로드 완료: ${image.naturalWidth}x${image.naturalHeight}`);
   };
@@ -94,25 +95,45 @@ async function loadImage(file) {
   image.src = url;
 }
 
+function fitWholeSheet() {
+  if (!state.image) return;
+
+  const width = state.image.naturalWidth;
+  const height = state.image.naturalHeight;
+  const guessed = guessFrameSize(width, height);
+
+  dom.offsetXInput.value = 0;
+  dom.offsetYInput.value = 0;
+  dom.gapXInput.value = 0;
+  dom.gapYInput.value = 0;
+  dom.frameWidthInput.value = guessed.width;
+  dom.frameHeightInput.value = guessed.height;
+  dom.sourceColsInput.value = Math.max(1, Math.floor(width / guessed.width));
+  dom.sourceRowsInput.value = Math.max(1, Math.floor(height / guessed.height));
+
+  drawSourceOverlay();
+  setStatus(`전체 균등 분할값 적용: ${dom.sourceColsInput.value}열 x ${dom.sourceRowsInput.value}행`);
+}
+
 function autoDetectGrid() {
   if (!state.image) return;
 
   const bounds = detectContentBounds(state.image);
-  const usableWidth = bounds.width || state.image.naturalWidth;
-  const usableHeight = bounds.height || state.image.naturalHeight;
-  const guessedSize = guessFrameSize(usableWidth, usableHeight);
+  const width = bounds.width > 0 ? bounds.width : state.image.naturalWidth;
+  const height = bounds.height > 0 ? bounds.height : state.image.naturalHeight;
+  const guessed = guessFrameSize(width, height);
 
   dom.offsetXInput.value = bounds.x;
   dom.offsetYInput.value = bounds.y;
-  dom.frameWidthInput.value = guessedSize.width;
-  dom.frameHeightInput.value = guessedSize.height;
-  dom.sourceColsInput.value = Math.max(1, Math.floor(usableWidth / guessedSize.width));
-  dom.sourceRowsInput.value = Math.max(1, Math.floor(usableHeight / guessedSize.height));
   dom.gapXInput.value = 0;
   dom.gapYInput.value = 0;
+  dom.frameWidthInput.value = guessed.width;
+  dom.frameHeightInput.value = guessed.height;
+  dom.sourceColsInput.value = Math.max(1, Math.floor(width / guessed.width));
+  dom.sourceRowsInput.value = Math.max(1, Math.floor(height / guessed.height));
 
-  drawSourceOverlay();
-  setStatus(`자동 추정: ${dom.sourceColsInput.value}열 x ${dom.sourceRowsInput.value}행, ${guessedSize.width}x${guessedSize.height}px`);
+  sliceFrames();
+  setStatus(`여백 기준 자동 추정: ${dom.sourceColsInput.value}열 x ${dom.sourceRowsInput.value}행, ${guessed.width}x${guessed.height}px`);
 }
 
 function detectContentBounds(image) {
@@ -123,8 +144,8 @@ function detectContentBounds(image) {
   ctx.drawImage(image, 0, 0);
 
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-  const topLeft = [data[0], data[1], data[2], data[3]];
-  const threshold = 8;
+  const corner = [data[0], data[1], data[2], data[3]];
+  const threshold = 10;
   let minX = canvas.width;
   let minY = canvas.height;
   let maxX = -1;
@@ -132,15 +153,16 @@ function detectContentBounds(image) {
 
   for (let y = 0; y < canvas.height; y += 1) {
     for (let x = 0; x < canvas.width; x += 1) {
-      const index = (y * canvas.width + x) * 4;
-      const alpha = data[index + 3];
-      const differsFromCorner =
-        Math.abs(data[index] - topLeft[0]) > threshold ||
-        Math.abs(data[index + 1] - topLeft[1]) > threshold ||
-        Math.abs(data[index + 2] - topLeft[2]) > threshold ||
-        Math.abs(alpha - topLeft[3]) > threshold;
+      const i = (y * canvas.width + x) * 4;
+      const alpha = data[i + 3];
+      const isTransparentContent = alpha > 8 && corner[3] <= 8;
+      const isDifferentFromCorner =
+        Math.abs(data[i] - corner[0]) > threshold ||
+        Math.abs(data[i + 1] - corner[1]) > threshold ||
+        Math.abs(data[i + 2] - corner[2]) > threshold ||
+        Math.abs(alpha - corner[3]) > threshold;
 
-      if (alpha > 12 && differsFromCorner) {
+      if (isTransparentContent || (alpha > 8 && isDifferentFromCorner)) {
         minX = Math.min(minX, x);
         minY = Math.min(minY, y);
         maxX = Math.max(maxX, x);
@@ -153,21 +175,23 @@ function detectContentBounds(image) {
     return { x: 0, y: 0, width: canvas.width, height: canvas.height };
   }
 
-  return {
-    x: minX,
-    y: minY,
-    width: maxX - minX + 1,
-    height: maxY - minY + 1,
-  };
+  return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
 }
 
 function guessFrameSize(width, height) {
   const commonSizes = [16, 24, 32, 48, 64, 96, 128, 256];
   const widthCandidates = commonSizes.filter((size) => width % size === 0);
   const heightCandidates = commonSizes.filter((size) => height % size === 0);
-  const bestWidth = widthCandidates.find((size) => width / size <= 12) || widthCandidates.at(-1) || width;
-  const bestHeight = heightCandidates.find((size) => height / size <= 12) || heightCandidates.at(-1) || height;
+  const bestWidth = pickBestSize(widthCandidates, width);
+  const bestHeight = pickBestSize(heightCandidates, height);
   return { width: bestWidth, height: bestHeight };
+}
+
+function pickBestSize(candidates, total) {
+  if (candidates.length === 0) return Math.min(total, 32);
+  const playable = candidates.filter((size) => total / size >= 2 && total / size <= 12);
+  if (playable.length > 0) return playable[0];
+  return candidates[candidates.length - 1];
 }
 
 function sliceFrames() {
@@ -176,25 +200,17 @@ function sliceFrames() {
     return;
   }
 
-  const settings = getSettings();
+  stopPlayback();
+  const s = getSettings();
   const frames = [];
   let id = 0;
 
-  for (let row = 0; row < settings.rows; row += 1) {
-    for (let col = 0; col < settings.cols; col += 1) {
-      const sx = settings.offsetX + col * (settings.frameWidth + settings.gapX);
-      const sy = settings.offsetY + row * (settings.frameHeight + settings.gapY);
-
-      if (sx + settings.frameWidth <= state.image.naturalWidth && sy + settings.frameHeight <= state.image.naturalHeight) {
-        frames.push({
-          id,
-          col,
-          row,
-          sx,
-          sy,
-          width: settings.frameWidth,
-          height: settings.frameHeight,
-        });
+  for (let row = 0; row < s.rows; row += 1) {
+    for (let col = 0; col < s.cols; col += 1) {
+      const sx = s.offsetX + col * (s.frameWidth + s.gapX);
+      const sy = s.offsetY + row * (s.frameHeight + s.gapY);
+      if (sx + s.frameWidth <= state.image.naturalWidth && sy + s.frameHeight <= state.image.naturalHeight) {
+        frames.push({ id, col, row, sx, sy, width: s.frameWidth, height: s.frameHeight });
         id += 1;
       }
     }
@@ -209,7 +225,7 @@ function sliceFrames() {
   renderFrameList();
   renderOutputList();
   drawSourceOverlay();
-  drawPreview(frames[0]);
+  drawPreview(frames[0] || null);
   setStatus(`${frames.length}개 프레임으로 분할했습니다.`);
 }
 
@@ -228,40 +244,65 @@ function drawSourceOverlay() {
 
   sourceCtx.lineWidth = 1;
   sourceCtx.strokeStyle = 'rgba(110, 168, 254, 0.95)';
-  sourceCtx.fillStyle = 'rgba(110, 168, 254, 0.16)';
   sourceCtx.font = `${Math.max(10, 10 * zoom)}px sans-serif`;
 
-  for (const frame of state.frames.length ? state.frames : buildPreviewFrames()) {
+  const frames = state.frames.length > 0 ? state.frames : buildPreviewFrames();
+  for (const frame of frames) {
+    sourceCtx.strokeStyle = 'rgba(110, 168, 254, 0.95)';
     sourceCtx.strokeRect(frame.sx * zoom + 0.5, frame.sy * zoom + 0.5, frame.width * zoom, frame.height * zoom);
+
     if (state.selectedFrameIds.has(frame.id)) {
+      sourceCtx.fillStyle = 'rgba(110, 168, 254, 0.20)';
       sourceCtx.fillRect(frame.sx * zoom, frame.sy * zoom, frame.width * zoom, frame.height * zoom);
     }
+
     sourceCtx.fillStyle = 'rgba(0, 0, 0, 0.72)';
-    sourceCtx.fillRect(frame.sx * zoom + 2, frame.sy * zoom + 2, 26, 16);
+    sourceCtx.fillRect(frame.sx * zoom + 2, frame.sy * zoom + 2, 28, 16);
     sourceCtx.fillStyle = '#ffffff';
     sourceCtx.fillText(String(frame.id), frame.sx * zoom + 6, frame.sy * zoom + 14);
-    sourceCtx.fillStyle = 'rgba(110, 168, 254, 0.16)';
   }
 }
 
 function buildPreviewFrames() {
   if (!state.image) return [];
-  const settings = getSettings();
+  const s = getSettings();
   const frames = [];
   let id = 0;
-  for (let row = 0; row < settings.rows; row += 1) {
-    for (let col = 0; col < settings.cols; col += 1) {
-      frames.push({
-        id,
-        sx: settings.offsetX + col * (settings.frameWidth + settings.gapX),
-        sy: settings.offsetY + row * (settings.frameHeight + settings.gapY),
-        width: settings.frameWidth,
-        height: settings.frameHeight,
-      });
-      id += 1;
+
+  for (let row = 0; row < s.rows; row += 1) {
+    for (let col = 0; col < s.cols; col += 1) {
+      const sx = s.offsetX + col * (s.frameWidth + s.gapX);
+      const sy = s.offsetY + row * (s.frameHeight + s.gapY);
+      if (sx + s.frameWidth <= state.image.naturalWidth && sy + s.frameHeight <= state.image.naturalHeight) {
+        frames.push({ id, sx, sy, width: s.frameWidth, height: s.frameHeight });
+        id += 1;
+      }
     }
   }
   return frames;
+}
+
+function handleSourceCanvasClick(event) {
+  if (!state.frames.length) return;
+
+  const rect = dom.sourceCanvas.getBoundingClientRect();
+  const zoom = Math.max(1, readNumber(dom.zoomInput, 2));
+  const x = (event.clientX - rect.left) / zoom;
+  const y = (event.clientY - rect.top) / zoom;
+  const frame = state.frames.find((item) => x >= item.sx && x < item.sx + item.width && y >= item.sy && y < item.sy + item.height);
+  if (!frame) return;
+
+  if (event.shiftKey) {
+    if (state.selectedFrameIds.has(frame.id)) state.selectedFrameIds.delete(frame.id);
+    else state.selectedFrameIds.add(frame.id);
+  } else {
+    state.selectedFrameIds.clear();
+    state.selectedFrameIds.add(frame.id);
+  }
+
+  drawPreview(frame);
+  renderFrameList();
+  drawSourceOverlay();
 }
 
 function renderFrameList() {
@@ -269,20 +310,23 @@ function renderFrameList() {
   for (const frame of state.frames) {
     const card = createFrameCard(frame, 'frame-card');
     card.classList.toggle('selected', state.selectedFrameIds.has(frame.id));
-    card.addEventListener('click', (event) => {
-      if (event.shiftKey) {
-        state.selectedFrameIds.has(frame.id) ? state.selectedFrameIds.delete(frame.id) : state.selectedFrameIds.add(frame.id);
-      } else {
-        state.selectedFrameIds.clear();
-        state.selectedFrameIds.add(frame.id);
-      }
-      drawPreview(frame);
-      renderFrameList();
-      drawSourceOverlay();
-    });
+    card.addEventListener('click', (event) => selectSourceFrame(frame, event.shiftKey));
     card.addEventListener('dblclick', () => addFramesToOutput([frame.id]));
     dom.frameList.appendChild(card);
   }
+}
+
+function selectSourceFrame(frame, multi) {
+  if (multi) {
+    if (state.selectedFrameIds.has(frame.id)) state.selectedFrameIds.delete(frame.id);
+    else state.selectedFrameIds.add(frame.id);
+  } else {
+    state.selectedFrameIds.clear();
+    state.selectedFrameIds.add(frame.id);
+  }
+  drawPreview(frame);
+  renderFrameList();
+  drawSourceOverlay();
 }
 
 function renderOutputList() {
@@ -294,14 +338,8 @@ function renderOutputList() {
     const card = createFrameCard(frame, 'output-card', index + 1);
     card.draggable = true;
     card.classList.toggle('selected', state.selectedOutputIndex === index);
-    card.addEventListener('click', () => {
-      state.selectedOutputIndex = index;
-      drawPreview(frame);
-      renderOutputList();
-    });
-    card.addEventListener('dragstart', () => {
-      state.dragOutputIndex = index;
-    });
+    card.addEventListener('click', () => selectOutputFrame(index));
+    card.addEventListener('dragstart', () => { state.dragOutputIndex = index; });
     card.addEventListener('dragover', (event) => {
       event.preventDefault();
       card.classList.add('drop-target');
@@ -314,6 +352,12 @@ function renderOutputList() {
     });
     dom.outputList.appendChild(card);
   });
+}
+
+function selectOutputFrame(index) {
+  state.selectedOutputIndex = index;
+  drawPreview(getFrameById(state.outputFrameIds[index]));
+  renderOutputList();
 }
 
 function createFrameCard(frame, className, indexLabel = frame.id) {
@@ -351,48 +395,45 @@ function drawPreview(frame) {
   dom.previewCanvas.height = frame.height * scale;
   previewCtx.imageSmoothingEnabled = false;
   previewCtx.clearRect(0, 0, dom.previewCanvas.width, dom.previewCanvas.height);
-  previewCtx.drawImage(
-    state.image,
-    frame.sx,
-    frame.sy,
-    frame.width,
-    frame.height,
-    0,
-    0,
-    dom.previewCanvas.width,
-    dom.previewCanvas.height,
-  );
+  previewCtx.drawImage(state.image, frame.sx, frame.sy, frame.width, frame.height, 0, 0, dom.previewCanvas.width, dom.previewCanvas.height);
 }
 
 function addFramesToOutput(frameIds) {
   const validIds = frameIds.filter((id) => getFrameById(id));
   state.outputFrameIds.push(...validIds);
+  if (state.selectedOutputIndex < 0 && state.outputFrameIds.length > 0) state.selectedOutputIndex = 0;
   renderOutputList();
   setStatus(`${validIds.length}개 프레임을 출력 순서에 추가했습니다.`);
 }
 
 function moveOutputFrame(fromIndex, toIndex) {
-  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return;
-  const [item] = state.outputFrameIds.splice(fromIndex, 1);
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= state.outputFrameIds.length || toIndex >= state.outputFrameIds.length || fromIndex === toIndex) return;
+  const item = state.outputFrameIds.splice(fromIndex, 1)[0];
   state.outputFrameIds.splice(toIndex, 0, item);
   state.selectedOutputIndex = toIndex;
-  state.dragOutputIndex = -1;
   renderOutputList();
 }
 
+function moveSelectedOutput(delta) {
+  const from = state.selectedOutputIndex;
+  const to = from + delta;
+  moveOutputFrame(from, to);
+}
+
 function startPlayback() {
-  if (state.playing || state.outputFrameIds.length === 0) {
-    if (state.outputFrameIds.length === 0) setStatus('출력 순서에 프레임을 먼저 추가하세요.');
+  if (state.playing) return;
+  if (state.outputFrameIds.length === 0) {
+    setStatus('출력 순서에 프레임을 먼저 추가하세요.');
     return;
   }
 
   state.playing = true;
   const tick = () => {
     if (!state.playing) return;
-    const frameId = state.outputFrameIds[state.playIndex % state.outputFrameIds.length];
-    const frame = getFrameById(frameId);
+    const outputIndex = state.playIndex % state.outputFrameIds.length;
+    const frame = getFrameById(state.outputFrameIds[outputIndex]);
     drawPreview(frame);
-    state.selectedOutputIndex = state.playIndex % state.outputFrameIds.length;
+    state.selectedOutputIndex = outputIndex;
     renderOutputList();
     state.playIndex += 1;
     const fps = clamp(readNumber(dom.fpsInput, 8), 1, 60);
@@ -409,7 +450,7 @@ function stopPlayback() {
 function removeSelectedOutput() {
   if (state.selectedOutputIndex < 0) return;
   state.outputFrameIds.splice(state.selectedOutputIndex, 1);
-  state.selectedOutputIndex = -1;
+  state.selectedOutputIndex = Math.min(state.selectedOutputIndex, state.outputFrameIds.length - 1);
   renderOutputList();
 }
 
@@ -442,7 +483,9 @@ function exportSpriteSheet() {
   const link = document.createElement('a');
   link.download = `sprite-sheet-${cols}x${rows}.png`;
   link.href = canvas.toDataURL('image/png');
+  document.body.appendChild(link);
   link.click();
+  link.remove();
   setStatus(`PNG 내보내기 완료: ${canvas.width}x${canvas.height}`);
 }
 
@@ -463,23 +506,19 @@ function resetEditor() {
 function bindEvents() {
   dom.fileInput.addEventListener('change', (event) => loadImage(event.target.files[0]));
   dom.autoDetectButton.addEventListener('click', autoDetectGrid);
+  dom.fitWholeButton.addEventListener('click', () => { fitWholeSheet(); sliceFrames(); });
   dom.sliceButton.addEventListener('click', sliceFrames);
   dom.resetButton.addEventListener('click', resetEditor);
   dom.zoomInput.addEventListener('input', drawSourceOverlay);
+  dom.sourceCanvas.addEventListener('click', handleSourceCanvasClick);
 
-  [
-    dom.frameWidthInput,
-    dom.frameHeightInput,
-    dom.sourceColsInput,
-    dom.sourceRowsInput,
-    dom.offsetXInput,
-    dom.offsetYInput,
-    dom.gapXInput,
-    dom.gapYInput,
-  ].forEach((input) => input.addEventListener('input', drawSourceOverlay));
+  [dom.frameWidthInput, dom.frameHeightInput, dom.sourceColsInput, dom.sourceRowsInput, dom.offsetXInput, dom.offsetYInput, dom.gapXInput, dom.gapYInput]
+    .forEach((input) => input.addEventListener('input', drawSourceOverlay));
 
-  dom.addSelectedButton.addEventListener('click', () => addFramesToOutput([...state.selectedFrameIds]));
+  dom.addSelectedButton.addEventListener('click', () => addFramesToOutput(Array.from(state.selectedFrameIds)));
   dom.addAllButton.addEventListener('click', () => addFramesToOutput(state.frames.map((frame) => frame.id)));
+  dom.moveOutputLeftButton.addEventListener('click', () => moveSelectedOutput(-1));
+  dom.moveOutputRightButton.addEventListener('click', () => moveSelectedOutput(1));
   dom.removeSelectedOutputButton.addEventListener('click', removeSelectedOutput);
   dom.clearOutputButton.addEventListener('click', () => {
     state.outputFrameIds = [];
@@ -492,4 +531,4 @@ function bindEvents() {
 }
 
 bindEvents();
-setStatus('이미지를 업로드하면 자동으로 기본 프레임 분할을 추정합니다.');
+setStatus('이미지를 업로드하면 전체 균등 분할 기준으로 시작합니다.');
