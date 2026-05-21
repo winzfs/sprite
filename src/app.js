@@ -34,6 +34,7 @@ const state = {
   isPlaying: false,
   playIndex: 0,
   dragIndex: -1,
+  lastSliceText: '',
 };
 
 function setStatus(text) {
@@ -71,16 +72,6 @@ function selectedFrameIds() {
   return Array.from(state.selectedFrameIds);
 }
 
-function pickFrameSize(total) {
-  const sizes = [16, 24, 32, 48, 64, 96, 128, 256];
-  const good = sizes.find((size) => total % size === 0 && total / size >= 2 && total / size <= 16);
-  if (good) return good;
-  for (let i = sizes.length - 1; i >= 0; i -= 1) {
-    if (total % sizes[i] === 0) return sizes[i];
-  }
-  return Math.min(total, 32);
-}
-
 function loadImage(file) {
   if (!file) return;
   stop();
@@ -91,64 +82,36 @@ function loadImage(file) {
   image.onload = () => {
     state.image = image;
     state.imageUrl = url;
-    fitWholeSheet();
-    sliceFrames();
+    autoDetect();
     setStatus(`로드 완료: ${file.name} / ${image.naturalWidth}x${image.naturalHeight}`);
   };
   image.onerror = () => setStatus('이미지를 불러오지 못했습니다.');
   image.src = url;
 }
 
-function fitWholeSheet() {
-  if (!state.image) {
-    setStatus('먼저 이미지를 업로드하세요.');
-    return;
+function chooseAutoGrid(width, height) {
+  const preferredSizes = [32, 48, 64, 96, 128, 24, 16, 256];
+  let best = null;
+
+  for (const size of preferredSizes) {
+    if (width % size !== 0 || height % size !== 0) continue;
+    const cols = width / size;
+    const rows = height / size;
+    if (cols < 1 || rows < 1 || cols > 64 || rows > 64) continue;
+    const score = Math.abs(size - 64) + Math.abs(cols - 6) * 2 + Math.abs(rows - 4) * 2;
+    if (!best || score < best.score) best = { fw: size, fh: size, cols, rows, score };
   }
 
-  const fw = pickFrameSize(state.image.naturalWidth);
-  const fh = pickFrameSize(state.image.naturalHeight);
-  ui.ox.value = 0;
-  ui.oy.value = 0;
-  ui.gx.value = 0;
-  ui.gy.value = 0;
-  ui.fw.value = fw;
-  ui.fh.value = fh;
-  ui.cols.value = Math.max(1, Math.floor(state.image.naturalWidth / fw));
-  ui.rows.value = Math.max(1, Math.floor(state.image.naturalHeight / fh));
-  drawSource();
-  setStatus(`전체 균등 분할값 적용: ${ui.cols.value}열 x ${ui.rows.value}행`);
-}
+  if (best) return best;
 
-function detectContentBounds() {
-  const canvas = document.createElement('canvas');
-  canvas.width = state.image.naturalWidth;
-  canvas.height = state.image.naturalHeight;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(state.image, 0, 0);
-
-  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-  const corner = [data[0], data[1], data[2], data[3]];
-  let minX = canvas.width;
-  let minY = canvas.height;
-  let maxX = -1;
-  let maxY = -1;
-
-  for (let y = 0; y < canvas.height; y += 1) {
-    for (let x = 0; x < canvas.width; x += 1) {
-      const i = (y * canvas.width + x) * 4;
-      const alpha = data[i + 3];
-      const diff = Math.abs(data[i] - corner[0]) > 12 || Math.abs(data[i + 1] - corner[1]) > 12 || Math.abs(data[i + 2] - corner[2]) > 12 || Math.abs(alpha - corner[3]) > 12;
-      if (alpha > 8 && (corner[3] < 8 || diff)) {
-        minX = Math.min(minX, x);
-        minY = Math.min(minY, y);
-        maxX = Math.max(maxX, x);
-        maxY = Math.max(maxY, y);
-      }
-    }
-  }
-
-  if (maxX < minX) return { x: 0, y: 0, w: canvas.width, h: canvas.height };
-  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+  const fallbackCols = Math.max(1, readNumber(ui.cols, 1));
+  const fallbackRows = Math.max(1, readNumber(ui.rows, 1));
+  return {
+    fw: Math.max(1, Math.floor(width / fallbackCols)),
+    fh: Math.max(1, Math.floor(height / fallbackRows)),
+    cols: fallbackCols,
+    rows: fallbackRows,
+  };
 }
 
 function autoDetect() {
@@ -157,22 +120,38 @@ function autoDetect() {
     return;
   }
 
-  const bounds = detectContentBounds();
-  const fw = pickFrameSize(bounds.w);
-  const fh = pickFrameSize(bounds.h);
-  ui.ox.value = bounds.x;
-  ui.oy.value = bounds.y;
+  const grid = chooseAutoGrid(state.image.naturalWidth, state.image.naturalHeight);
+  ui.ox.value = 0;
+  ui.oy.value = 0;
   ui.gx.value = 0;
   ui.gy.value = 0;
-  ui.fw.value = fw;
-  ui.fh.value = fh;
-  ui.cols.value = Math.max(1, Math.floor(bounds.w / fw));
-  ui.rows.value = Math.max(1, Math.floor(bounds.h / fh));
-  sliceFrames();
-  setStatus(`자동 추정 완료: ${ui.cols.value}열 x ${ui.rows.value}행 / ${fw}x${fh}px`);
+  ui.fw.value = grid.fw;
+  ui.fh.value = grid.fh;
+  ui.cols.value = grid.cols;
+  ui.rows.value = grid.rows;
+  sliceFrames({ keepOutput: false, silent: true });
+  setStatus(`자동 추정: 전체 이미지 기준 ${grid.cols}열 x ${grid.rows}행 / ${grid.fw}x${grid.fh}px`);
 }
 
-function sliceFrames() {
+function fitWholeSheet() {
+  if (!state.image) {
+    setStatus('먼저 이미지를 업로드하세요.');
+    return;
+  }
+
+  const cols = Math.max(1, readNumber(ui.cols, 1));
+  const rows = Math.max(1, readNumber(ui.rows, 1));
+  ui.ox.value = 0;
+  ui.oy.value = 0;
+  ui.gx.value = 0;
+  ui.gy.value = 0;
+  ui.fw.value = Math.max(1, Math.floor(state.image.naturalWidth / cols));
+  ui.fh.value = Math.max(1, Math.floor(state.image.naturalHeight / rows));
+  sliceFrames({ keepOutput: false, silent: true });
+  setStatus(`전체 균등 적용: ${cols}열 x ${rows}행 / ${ui.fw.value}x${ui.fh.value}px`);
+}
+
+function sliceFrames(options = {}) {
   if (!state.image) {
     setStatus('먼저 이미지를 업로드하세요.');
     return;
@@ -196,14 +175,23 @@ function sliceFrames() {
 
   state.frames = frames;
   state.selectedFrameIds.clear();
-  state.outputFrameIds = [];
-  state.selectedOutputIndex = -1;
-  state.playIndex = 0;
+
+  if (!options.keepOutput) {
+    state.outputFrameIds = [];
+    state.selectedOutputIndex = -1;
+    state.playIndex = 0;
+  } else {
+    state.outputFrameIds = state.outputFrameIds.filter((frameId) => frameId < frames.length);
+    if (state.outputFrameIds.length === 0) state.selectedOutputIndex = -1;
+    else state.selectedOutputIndex = Math.min(state.selectedOutputIndex, state.outputFrameIds.length - 1);
+  }
+
   renderFrames();
   renderOutput();
   drawSource();
   drawPreview(frames[0] || null);
-  setStatus(`${frames.length}개 프레임으로 분할했습니다.`);
+  state.lastSliceText = `${frames.length}개 프레임 / ${s.cols}열 x ${s.rows}행 / ${s.fw}x${s.fh}px`;
+  if (!options.silent) setStatus(`분할 갱신: ${state.lastSliceText}`);
 }
 
 function previewFrames() {
@@ -308,9 +296,7 @@ function addOutput(frameIds) {
     setStatus('선택된 프레임이 없습니다.');
     return;
   }
-  for (const id of frameIds) {
-    if (getFrame(id)) state.outputFrameIds.push(id);
-  }
+  for (const id of frameIds) if (getFrame(id)) state.outputFrameIds.push(id);
   if (state.selectedOutputIndex < 0 && state.outputFrameIds.length) state.selectedOutputIndex = 0;
   renderOutput();
   setStatus(`${frameIds.length}개 프레임을 출력 순서에 추가했습니다.`);
@@ -431,14 +417,16 @@ function reset() {
 function bind() {
   ui.file.addEventListener('change', (event) => loadImage(event.target.files[0]));
   ui.zoom.addEventListener('input', drawSource);
-  [ui.fw, ui.fh, ui.cols, ui.rows, ui.ox, ui.oy, ui.gx, ui.gy].forEach((input) => input.addEventListener('input', drawSource));
+  [ui.fw, ui.fh, ui.cols, ui.rows, ui.ox, ui.oy, ui.gx, ui.gy].forEach((input) => {
+    input.addEventListener('input', () => sliceFrames({ keepOutput: true, silent: false }));
+  });
 
   document.addEventListener('click', (event) => {
     const id = event.target.id;
     if (id === 'testButton') setStatus('버튼 동작 정상입니다.');
     if (id === 'autoDetectButton') autoDetect();
-    if (id === 'fitWholeButton') { fitWholeSheet(); sliceFrames(); }
-    if (id === 'sliceButton') sliceFrames();
+    if (id === 'fitWholeButton') fitWholeSheet();
+    if (id === 'sliceButton') sliceFrames({ keepOutput: false, silent: false });
     if (id === 'resetButton') reset();
     if (id === 'playButton') play();
     if (id === 'stopButton') { stop(); setStatus('재생 정지'); }
@@ -475,4 +463,4 @@ function bind() {
 }
 
 bind();
-setStatus('JS 연결 완료. 자동 추정/재생/앞뒤 버튼 사용 가능.');
+setStatus('JS 연결 완료. 행/열 입력 변경 시 프레임이 즉시 갱신됩니다.');
