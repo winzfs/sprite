@@ -18,6 +18,9 @@ const ui = {
   status: $('statusText'),
   fps: $('fpsInput'),
   exportCols: $('exportColsInput'),
+  exportBg: $('exportBgInput'),
+  transparentBg: $('transparentBgInput'),
+  keepSpacing: $('keepSpacingInput'),
 };
 
 const sourceCtx = ui.source.getContext('2d', { willReadFrequently: true });
@@ -379,25 +382,48 @@ function exportPng() {
   if (!ensureOutput()) return;
   const first = getFrame(state.outputFrameIds[0]);
   if (!first) return;
+
+  const s = settings();
   const cols = Math.max(1, Math.min(state.outputFrameIds.length, readNumber(ui.exportCols, 6)));
   const rows = Math.ceil(state.outputFrameIds.length / cols);
+  const keepSpacing = ui.keepSpacing ? ui.keepSpacing.checked : true;
+  const padX = keepSpacing ? s.ox : 0;
+  const padY = keepSpacing ? s.oy : 0;
+  const gapX = keepSpacing ? s.gx : 0;
+  const gapY = keepSpacing ? s.gy : 0;
+  const cellW = first.w;
+  const cellH = first.h;
+
   const canvas = document.createElement('canvas');
-  canvas.width = first.w * cols;
-  canvas.height = first.h * rows;
+  canvas.width = padX * 2 + cellW * cols + gapX * Math.max(0, cols - 1);
+  canvas.height = padY * 2 + cellH * rows + gapY * Math.max(0, rows - 1);
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
+
+  if (!ui.transparentBg || !ui.transparentBg.checked) {
+    ctx.fillStyle = ui.exportBg ? ui.exportBg.value : '#d9d9d9';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
   state.outputFrameIds.forEach((id, index) => {
     const frame = getFrame(id);
     if (!frame) return;
-    ctx.drawImage(state.image, frame.sx, frame.sy, frame.w, frame.h, (index % cols) * first.w, Math.floor(index / cols) * first.h, first.w, first.h);
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const dx = padX + col * (cellW + gapX);
+    const dy = padY + row * (cellH + gapY);
+    ctx.drawImage(state.image, frame.sx, frame.sy, frame.w, frame.h, dx, dy, cellW, cellH);
   });
+
   const link = document.createElement('a');
-  link.download = `sprite-sheet-${cols}x${rows}.png`;
+  link.download = `sprite-sheet-${cols}x${rows}-${canvas.width}x${canvas.height}.png`;
   link.href = canvas.toDataURL('image/png');
   document.body.append(link);
   link.click();
   link.remove();
-  setStatus(`PNG 내보내기 완료: ${canvas.width}x${canvas.height}`);
+  setStatus(`PNG 내보내기 완료: ${canvas.width}x${canvas.height} / 여백 ${padX},${padY} / 간격 ${gapX},${gapY}`);
 }
 
 function reset() {
