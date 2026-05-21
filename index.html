@@ -4,24 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sprite Sheet Editor</title>
-  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="styles.css?v=21">
 </head>
 <body>
   <header class="app-header">
-    <div>
-      <h1>Sprite Sheet Editor</h1>
-      <p>업로드 → 자동/수동 분할 → 프레임별 위치 보정 → 선택/재배치 → 재생 → PNG 내보내기</p>
-    </div>
+    <h1>Sprite Sheet Editor</h1>
+    <p>업로드 → 분할 → 출력 순서 편집 → 위치/크기 보정 → 재생 → PNG 내보내기</p>
   </header>
 
   <main class="app-layout">
     <section class="panel">
-      <div class="panel-title">1. 이미지 / 분할 설정</div>
+      <div class="panel-title">1. 분할 설정</div>
       <div class="panel-body controls">
         <label>이미지 업로드 <input id="fileInput" type="file" accept="image/*"></label>
         <div class="grid-2">
-          <label>프레임 너비 <input id="frameWidthInput" type="number" min="1" value="32"></label>
-          <label>프레임 높이 <input id="frameHeightInput" type="number" min="1" value="32"></label>
+          <label>기본 프레임 너비 <input id="frameWidthInput" type="number" min="1" value="32"></label>
+          <label>기본 프레임 높이 <input id="frameHeightInput" type="number" min="1" value="32"></label>
         </div>
         <div class="grid-2">
           <label>열 수 <input id="sourceColsInput" type="number" min="1" value="1"></label>
@@ -40,16 +38,15 @@
           <button id="testButton" type="button">동작 테스트</button>
           <button id="autoDetectButton" type="button" class="primary">자동 추정</button>
           <button id="fitWholeButton" type="button">전체 균등</button>
-          <button id="sliceButton" type="button">프레임 나누기</button>
+          <button id="sliceButton" type="button">다시 분할</button>
           <button id="resetButton" type="button" class="danger">초기화</button>
         </div>
         <div id="statusText" class="status">로딩 중...</div>
-        <p class="hint">행/열, 프레임 크기, 간격을 바꾸면 프레임이 즉시 다시 나뉩니다.</p>
       </div>
     </section>
 
     <section class="panel center-panel">
-      <div class="panel-title">2. 원본</div>
+      <div class="panel-title">2. 원본 무대</div>
       <div class="stage-wrap"><canvas id="sourceCanvas" class="source-canvas"></canvas></div>
     </section>
 
@@ -63,7 +60,7 @@
         </div>
 
         <div>
-          <div class="sub-title">선택 프레임 원본 위치 보정</div>
+          <div class="sub-title">선택 프레임 위치 보정</div>
           <div class="nudge-pad">
             <button id="nudgeUpButton" type="button">▲</button>
             <div class="button-row">
@@ -84,12 +81,39 @@
           </div>
         </div>
 
+        <div>
+          <div class="sub-title">선택 프레임 박스 크기 보정</div>
+          <div class="button-row">
+            <button id="boxWMinusButton" type="button">너비 -</button>
+            <button id="boxWPlusButton" type="button">너비 +</button>
+            <button id="boxHMinusButton" type="button">높이 -</button>
+            <button id="boxHPlusButton" type="button">높이 +</button>
+            <button id="boxResetButton" type="button" class="danger">크기 초기화</button>
+          </div>
+          <div class="grid-2">
+            <label>크기 단위(px) <input id="boxStepInput" type="number" min="1" value="1"></label>
+            <label>현재 프레임 크기 <input id="selectedBoxInput" type="text" value="선택 없음" readonly></label>
+          </div>
+        </div>
+
         <div class="button-row">
-          <button id="playButton" type="button" class="primary">재생</button>
-          <button id="stopButton" type="button">정지</button>
+          <button id="selectAllButton" type="button" class="primary">전체 선택</button>
+          <button id="clearSelectionButton" type="button">선택 해제</button>
           <button id="addSelectedButton" type="button">선택 추가</button>
           <button id="addAllButton" type="button">전체 추가</button>
         </div>
+        <div class="button-row">
+          <button id="playButton" type="button" class="primary">재생</button>
+          <button id="stopButton" type="button">정지</button>
+          <button id="moveOutputLeftButton" type="button">앞으로</button>
+          <button id="moveOutputRightButton" type="button">뒤로</button>
+        </div>
+        <div class="button-row">
+          <button id="removeSelectedOutputButton" type="button" class="danger">선택 제거</button>
+          <button id="clearOutputButton" type="button" class="danger">출력 비우기</button>
+          <button id="exportButton" type="button" class="primary">PNG 내보내기</button>
+        </div>
+
         <div class="grid-2">
           <label>FPS <input id="fpsInput" type="number" min="1" max="60" value="8"></label>
           <label>내보내기 열 수 <input id="exportColsInput" type="number" min="1" value="6"></label>
@@ -99,19 +123,13 @@
           <label class="check-label"><input id="transparentBgInput" type="checkbox"> 투명 배경</label>
         </div>
         <label class="check-label"><input id="keepSpacingInput" type="checkbox" checked> 원본 오프셋/간격을 출력에도 유지</label>
-        <div class="button-row">
-          <button id="moveOutputLeftButton" type="button">앞으로</button>
-          <button id="moveOutputRightButton" type="button">뒤로</button>
-          <button id="removeSelectedOutputButton" type="button" class="danger">선택 제거</button>
-          <button id="clearOutputButton" type="button" class="danger">출력 비우기</button>
-          <button id="exportButton" type="button" class="primary">PNG 내보내기</button>
-        </div>
-        <div><div class="sub-title">분할된 프레임</div><div id="frameList" class="frame-list fixed-grid-list"></div></div>
+
         <div><div class="sub-title">출력 순서</div><div id="outputList" class="output-list fixed-grid-list"></div></div>
+        <div class="hidden"><div id="frameList" class="frame-list fixed-grid-list"></div></div>
       </div>
     </section>
   </main>
-  <script src="src/app.js?v=13" defer></script>
-  <script src="src/grid-layout.js?v=15" defer></script>
+  <script src="src/app.js?v=21" defer></script>
+  <script src="src/grid-layout.js?v=21" defer></script>
 </body>
 </html>
