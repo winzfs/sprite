@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sprite Sheet Editor</title>
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
   <header class="app-header">
     <div>
       <h1>Sprite Sheet Editor</h1>
-      <p>업로드 → 자동/수동 분할 → 선택/재배치 → 재생 → PNG 내보내기</p>
+      <p>업로드 → 자동/수동 분할 → 프레임별 위치 보정 → 선택/재배치 → 재생 → PNG 내보내기</p>
     </div>
   </header>
 
@@ -57,6 +57,24 @@
       <div class="panel-title">3. 편집 / 출력</div>
       <div class="panel-body controls">
         <div class="preview-box"><canvas id="previewCanvas"></canvas></div>
+
+        <div>
+          <div class="sub-title">선택 프레임 원본 위치 보정</div>
+          <div class="nudge-pad">
+            <button id="nudgeUpButton" type="button">▲</button>
+            <div class="button-row">
+              <button id="nudgeLeftButton" type="button">◀</button>
+              <button id="nudgeResetButton" type="button" class="danger">보정 초기화</button>
+              <button id="nudgeRightButton" type="button">▶</button>
+            </div>
+            <button id="nudgeDownButton" type="button">▼</button>
+          </div>
+          <div class="grid-2">
+            <label>이동 단위(px) <input id="nudgeStepInput" type="number" min="1" value="1"></label>
+            <label>현재 보정 <input id="selectedShiftInput" type="text" value="선택 없음" readonly></label>
+          </div>
+        </div>
+
         <div class="button-row">
           <button id="playButton" type="button" class="primary">재생</button>
           <button id="stopButton" type="button">정지</button>
@@ -84,6 +102,6 @@
       </div>
     </section>
   </main>
-  <script src="src/app.js?v=9" defer></script>
+  <script src="src/app.js?v=10" defer></script>
 </body>
 </html>
