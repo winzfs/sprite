@@ -23,6 +23,8 @@ const ui = {
   keepSpacing: $('keepSpacingInput'),
   nudgeStep: $('nudgeStepInput'),
   selectedShift: $('selectedShiftInput'),
+  showPreviewFrame: $('showPreviewFrameInput'),
+  showPreviewCenter: $('showPreviewCenterInput'),
 };
 
 const sourceCtx = ui.source.getContext('2d', { willReadFrequently: true });
@@ -41,6 +43,7 @@ const state = {
   playIndex: 0,
   dragIndex: -1,
   lastSliceText: '',
+  lastPreviewFrame: null,
 };
 
 function setStatus(text) {
@@ -315,7 +318,37 @@ function drawSource() {
   }
 }
 
+function drawPreviewGuides(width, height, scale) {
+  if (ui.showPreviewFrame && ui.showPreviewFrame.checked) {
+    previewCtx.save();
+    previewCtx.strokeStyle = 'rgba(255,255,255,.95)';
+    previewCtx.lineWidth = 1;
+    previewCtx.strokeRect(0.5, 0.5, width * scale - 1, height * scale - 1);
+    previewCtx.strokeStyle = 'rgba(0,0,0,.85)';
+    previewCtx.setLineDash([4, 3]);
+    previewCtx.strokeRect(2.5, 2.5, width * scale - 5, height * scale - 5);
+    previewCtx.restore();
+  }
+
+  if (ui.showPreviewCenter && ui.showPreviewCenter.checked) {
+    const cx = Math.floor((width * scale) / 2) + 0.5;
+    const cy = Math.floor((height * scale) / 2) + 0.5;
+    previewCtx.save();
+    previewCtx.strokeStyle = 'rgba(110,168,254,.95)';
+    previewCtx.lineWidth = 1;
+    previewCtx.setLineDash([3, 3]);
+    previewCtx.beginPath();
+    previewCtx.moveTo(cx, 0);
+    previewCtx.lineTo(cx, height * scale);
+    previewCtx.moveTo(0, cy);
+    previewCtx.lineTo(width * scale, cy);
+    previewCtx.stroke();
+    previewCtx.restore();
+  }
+}
+
 function drawPreview(frame) {
+  state.lastPreviewFrame = frame || null;
   if (!state.image || !frame) {
     previewCtx.clearRect(0, 0, ui.preview.width, ui.preview.height);
     return;
@@ -327,6 +360,7 @@ function drawPreview(frame) {
   previewCtx.imageSmoothingEnabled = false;
   previewCtx.clearRect(0, 0, ui.preview.width, ui.preview.height);
   previewCtx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, 0, 0, ui.preview.width, ui.preview.height);
+  drawPreviewGuides(frame.w, frame.h, scale);
 }
 
 function createCard(frame, label) {
@@ -411,6 +445,18 @@ function resetSelectedFrameShifts() {
   setStatus(`${ids.length}개 프레임 위치 보정 초기화`);
 }
 
+function colorDistanceSq(data, index, color) {
+  const dr = data[index] - color.r;
+  const dg = data[index + 1] - color.g;
+  const db = data[index + 2] - color.b;
+  return dr * dr + dg * dg + db * db;
+}
+
+function getPixelColor(data, width, x, y) {
+  const index = (y * width + x) * 4;
+  return { r: data[index], g: data[index + 1], b: data[index + 2], a: data[index + 3] };
+}
+
 function detectOpaqueBounds(frame) {
   if (!state.image || !frame) return null;
 
@@ -423,25 +469,61 @@ function detectOpaqueBounds(frame) {
   ctx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, 0, 0, frame.w, frame.h);
 
   const data = ctx.getImageData(0, 0, frame.w, frame.h).data;
+  const corners = [
+    getPixelColor(data, frame.w, 0, 0),
+    getPixelColor(data, frame.w, frame.w - 1, 0),
+    getPixelColor(data, frame.w, 0, frame.h - 1),
+    getPixelColor(data, frame.w, frame.w - 1, frame.h - 1),
+  ];
+  const alphaHasTransparency = corners.some((color) => color.a < 250);
+  const backgroundColors = corners.filter((color) => color.a > 8);
+  const backgroundThresholdSq = 18 * 18 * 3;
+
   let minX = frame.w;
   let minY = frame.h;
   let maxX = -1;
   let maxY = -1;
+  let detected = 0;
 
   for (let y = 0; y < frame.h; y += 1) {
     for (let x = 0; x < frame.w; x += 1) {
-      const alpha = data[(y * frame.w + x) * 4 + 3];
-      if (alpha > 8) {
+      const index = (y * frame.w + x) * 4;
+      const alpha = data[index + 3];
+      if (alpha <= 8) continue;
+
+      let isContent = true;
+      if (!alphaHasTransparency && backgroundColors.length > 0) {
+        isContent = !backgroundColors.some((color) => colorDistanceSq(data, index, color) <= backgroundThresholdSq);
+      }
+
+      if (isContent) {
         minX = Math.min(minX, x);
         minY = Math.min(minY, y);
         maxX = Math.max(maxX, x);
         maxY = Math.max(maxY, y);
+        detected += 1;
+      }
+    }
+  }
+
+  if (detected === 0 && !alphaHasTransparency) {
+    for (let y = 0; y < frame.h; y += 1) {
+      for (let x = 0; x < frame.w; x += 1) {
+        const index = (y * frame.w + x) * 4;
+        const alpha = data[index + 3];
+        if (alpha > 8) {
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+          detected += 1;
+        }
       }
     }
   }
 
   if (maxX < minX || maxY < minY) return null;
-  return { minX, minY, maxX, maxY };
+  return { minX, minY, maxX, maxY, detected };
 }
 
 function alignSelectedFrames(horizontal, vertical) {
@@ -667,6 +749,8 @@ function reset() {
 function bind() {
   ui.file.addEventListener('change', (event) => loadImage(event.target.files[0]));
   ui.zoom.addEventListener('input', drawSource);
+  if (ui.showPreviewFrame) ui.showPreviewFrame.addEventListener('change', () => drawPreview(state.lastPreviewFrame));
+  if (ui.showPreviewCenter) ui.showPreviewCenter.addEventListener('change', () => drawPreview(state.lastPreviewFrame));
   [ui.fw, ui.fh, ui.cols, ui.rows, ui.ox, ui.oy, ui.gx, ui.gy].forEach((input) => {
     input.addEventListener('input', () => sliceFrames({ keepOutput: true, keepShifts: true, silent: false }));
   });
@@ -728,4 +812,4 @@ function bind() {
 
 bind();
 updateShiftDisplay();
-setStatus('JS 연결 완료. 픽셀 기준 가운데 정렬을 사용할 수 있습니다.');
+setStatus('JS 연결 완료. 미리보기 테두리와 개선된 가운데 정렬을 사용할 수 있습니다.');
