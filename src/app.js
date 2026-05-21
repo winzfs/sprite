@@ -46,15 +46,48 @@ function getShift(frameId) { return state.frameShifts.get(frameId) || { x: 0, y:
 function setShift(frameId, shift) { if (shift.x === 0 && shift.y === 0) state.frameShifts.delete(frameId); else state.frameShifts.set(frameId, shift); }
 function getBoxSize(frame) { const size = state.frameSizes.get(frame.id); return { w: size?.w || frame.w, h: size?.h || frame.h }; }
 function setBoxSize(frameId, size, baseFrame) {
-  const w = Math.max(1, size.w); const h = Math.max(1, size.h);
-  if (baseFrame && w === baseFrame.w && h === baseFrame.h) state.frameSizes.delete(frameId); else state.frameSizes.set(frameId, { w, h });
+  const w = Math.max(1, Math.round(size.w));
+  const h = Math.max(1, Math.round(size.h));
+  if (baseFrame && w === baseFrame.w && h === baseFrame.h) state.frameSizes.delete(frameId);
+  else state.frameSizes.set(frameId, { w, h });
 }
+
 function getSourceRect(frame) {
-  const shift = getShift(frame.id); const size = getBoxSize(frame);
-  const maxX = Math.max(0, state.image.naturalWidth - size.w); const maxY = Math.max(0, state.image.naturalHeight - size.h);
-  const sx = clamp(frame.sx + shift.x, 0, maxX); const sy = clamp(frame.sy + shift.y, 0, maxY);
+  const shift = getShift(frame.id);
+  const size = getBoxSize(frame);
+  const sx = clamp(frame.sx + shift.x, 0, Math.max(0, state.image.naturalWidth - 1));
+  const sy = clamp(frame.sy + shift.y, 0, Math.max(0, state.image.naturalHeight - 1));
   return { sx, sy, w: size.w, h: size.h, shiftX: sx - frame.sx, shiftY: sy - frame.sy };
 }
+
+function getFrameIntersection(rect) {
+  const ix = clamp(rect.sx, 0, state.image.naturalWidth);
+  const iy = clamp(rect.sy, 0, state.image.naturalHeight);
+  const ix2 = clamp(rect.sx + rect.w, 0, state.image.naturalWidth);
+  const iy2 = clamp(rect.sy + rect.h, 0, state.image.naturalHeight);
+  const iw = Math.max(0, ix2 - ix);
+  const ih = Math.max(0, iy2 - iy);
+  return {
+    sx: ix,
+    sy: iy,
+    sw: iw,
+    sh: ih,
+    dx: ix - rect.sx,
+    dy: iy - rect.sy,
+  };
+}
+
+function drawFrameImage(ctx, frame, dx, dy, scale = 1) {
+  const rect = getSourceRect(frame);
+  const part = getFrameIntersection(rect);
+  if (part.sw <= 0 || part.sh <= 0) return;
+  ctx.drawImage(
+    state.image,
+    part.sx, part.sy, part.sw, part.sh,
+    dx + part.dx * scale, dy + part.dy * scale, part.sw * scale, part.sh * scale,
+  );
+}
+
 function getActiveFrameIds() {
   const ids = selectedFrameIds();
   if (ids.length) return ids;
@@ -156,7 +189,10 @@ function drawSource() {
     const rect = getSourceRect(frame); const isSelected = state.selectedFrameIds.has(frame.id);
     const adjusted = rect.shiftX !== 0 || rect.shiftY !== 0 || rect.w !== frame.w || rect.h !== frame.h;
     sourceCtx.strokeStyle = '#60a5fa'; sourceCtx.strokeRect(frame.sx * zoom + 0.5, frame.sy * zoom + 0.5, frame.w * zoom, frame.h * zoom);
-    if (adjusted || isSelected) { sourceCtx.strokeStyle = adjusted ? '#fbbf24' : '#93c5fd'; sourceCtx.strokeRect(rect.sx * zoom + 1.5, rect.sy * zoom + 1.5, rect.w * zoom - 2, rect.h * zoom - 2); }
+    if (adjusted || isSelected) {
+      sourceCtx.strokeStyle = adjusted ? '#fbbf24' : '#93c5fd';
+      sourceCtx.strokeRect(rect.sx * zoom + 1.5, rect.sy * zoom + 1.5, rect.w * zoom - 2, rect.h * zoom - 2);
+    }
     if (isSelected) { sourceCtx.fillStyle = 'rgba(96,165,250,.22)'; sourceCtx.fillRect(rect.sx * zoom, rect.sy * zoom, rect.w * zoom, rect.h * zoom); }
     sourceCtx.fillStyle = 'rgba(0,0,0,.7)'; sourceCtx.fillRect(rect.sx * zoom + 2, rect.sy * zoom + 2, 28, 16);
     sourceCtx.fillStyle = '#fff'; sourceCtx.fillText(String(frame.id), rect.sx * zoom + 6, rect.sy * zoom + 14);
@@ -171,12 +207,17 @@ function drawPreview(frame) {
   if (!state.image || !frame) { previewCtx.clearRect(0, 0, ui.preview.width, ui.preview.height); return; }
   const rect = getSourceRect(frame); const scale = Math.max(1, Math.min(8, Math.floor(160 / Math.max(rect.w, rect.h))));
   ui.preview.width = rect.w * scale; ui.preview.height = rect.h * scale;
-  previewCtx.imageSmoothingEnabled = false; previewCtx.clearRect(0, 0, ui.preview.width, ui.preview.height); previewCtx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, 0, 0, ui.preview.width, ui.preview.height); drawPreviewGuides(rect.w, rect.h, scale);
+  previewCtx.imageSmoothingEnabled = false; previewCtx.clearRect(0, 0, ui.preview.width, ui.preview.height);
+  if (!ui.transparentBg?.checked) { previewCtx.fillStyle = ui.exportBg?.value || '#d9d9d9'; previewCtx.fillRect(0, 0, ui.preview.width, ui.preview.height); }
+  drawFrameImage(previewCtx, frame, 0, 0, scale);
+  drawPreviewGuides(rect.w, rect.h, scale);
 }
 function createCard(frame, label) {
   const rect = getSourceRect(frame); const card = document.createElement('div'); card.className = 'frame-card';
   if (rect.shiftX !== 0 || rect.shiftY !== 0 || rect.w !== frame.w || rect.h !== frame.h) card.classList.add('shifted');
-  const canvas = document.createElement('canvas'); canvas.width = rect.w; canvas.height = rect.h; const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, 0, 0, rect.w, rect.h);
+  const canvas = document.createElement('canvas'); canvas.width = rect.w; canvas.height = rect.h; const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
+  if (!ui.transparentBg?.checked) { ctx.fillStyle = ui.exportBg?.value || '#d9d9d9'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  drawFrameImage(ctx, frame, 0, 0, 1);
   const badge = document.createElement('span'); badge.className = 'frame-index'; badge.textContent = String(label); card.append(canvas, badge); return card;
 }
 function renderFrames() { if (ui.frames) ui.frames.textContent = ''; }
@@ -214,12 +255,22 @@ function removeSelectedOutput() {
 }
 function nudgeSelectedFrames(dx, dy) {
   const ids = getActiveFrameIds(); if (!ids.length) return setStatus('위치를 조정할 프레임을 먼저 선택하세요.');
-  for (const id of ids) { const frame = getFrame(id); if (!frame) continue; const current = getShift(id); const size = getBoxSize(frame); const sx = clamp(frame.sx + current.x + dx, 0, state.image.naturalWidth - size.w); const sy = clamp(frame.sy + current.y + dy, 0, state.image.naturalHeight - size.h); setShift(id, { x: sx - frame.sx, y: sy - frame.sy }); }
+  for (const id of ids) {
+    const frame = getFrame(id); if (!frame) continue;
+    const current = getShift(id);
+    const sx = clamp(frame.sx + current.x + dx, 0, Math.max(0, state.image.naturalWidth - 1));
+    const sy = clamp(frame.sy + current.y + dy, 0, Math.max(0, state.image.naturalHeight - 1));
+    setShift(id, { x: sx - frame.sx, y: sy - frame.sy });
+  }
   const first = getFrame(ids[0]); renderOutput(); drawSource(); drawPreview(first); updateInfoDisplays(); setStatus(`${ids.length}개 위치 보정`);
 }
 function resizeSelectedBoxes(dw, dh) {
   const ids = getActiveFrameIds(); if (!ids.length) return setStatus('크기를 조정할 프레임을 먼저 선택하세요.');
-  for (const id of ids) { const frame = getFrame(id); if (!frame) continue; const rect = getSourceRect(frame); const size = getBoxSize(frame); const maxW = state.image.naturalWidth - rect.sx; const maxH = state.image.naturalHeight - rect.sy; setBoxSize(id, { w: clamp(size.w + dw, 1, maxW), h: clamp(size.h + dh, 1, maxH) }, frame); }
+  for (const id of ids) {
+    const frame = getFrame(id); if (!frame) continue;
+    const size = getBoxSize(frame);
+    setBoxSize(id, { w: size.w + dw, h: size.h + dh }, frame);
+  }
   const first = getFrame(ids[0]); renderOutput(); drawSource(); drawPreview(first); updateInfoDisplays(); setStatus(`${ids.length}개 프레임 박스 크기 보정`);
 }
 function resetSelectedFrameShifts() { const ids = getActiveFrameIds(); if (!ids.length) return setStatus('보정을 초기화할 프레임을 먼저 선택하세요.'); for (const id of ids) state.frameShifts.delete(id); const first = getFrame(ids[0]); renderOutput(); drawSource(); drawPreview(first); updateInfoDisplays(); setStatus(`${ids.length}개 위치 보정 초기화`); }
@@ -227,7 +278,9 @@ function resetSelectedBoxSizes() { const ids = getActiveFrameIds(); if (!ids.len
 function colorDistanceSq(data, index, color) { const dr = data[index] - color.r, dg = data[index + 1] - color.g, db = data[index + 2] - color.b; return dr * dr + dg * dg + db * db; }
 function getPixelColor(data, width, x, y) { const index = (y * width + x) * 4; return { r: data[index], g: data[index + 1], b: data[index + 2], a: data[index + 3] }; }
 function detectOpaqueBounds(frame) {
-  const rect = getSourceRect(frame); const canvas = document.createElement('canvas'); canvas.width = rect.w; canvas.height = rect.h; const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.imageSmoothingEnabled = false; ctx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, 0, 0, rect.w, rect.h);
+  const rect = getSourceRect(frame); const canvas = document.createElement('canvas'); canvas.width = rect.w; canvas.height = rect.h; const ctx = canvas.getContext('2d', { willReadFrequently: true }); ctx.imageSmoothingEnabled = false;
+  if (!ui.transparentBg?.checked) { ctx.fillStyle = ui.exportBg?.value || '#d9d9d9'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  drawFrameImage(ctx, frame, 0, 0, 1);
   const data = ctx.getImageData(0, 0, rect.w, rect.h).data; const corners = [getPixelColor(data, rect.w, 0, 0), getPixelColor(data, rect.w, rect.w - 1, 0), getPixelColor(data, rect.w, 0, rect.h - 1), getPixelColor(data, rect.w, rect.w - 1, rect.h - 1)]; const alphaHasTransparency = corners.some((c) => c.a < 250); const bg = corners.filter((c) => c.a > 8); const threshold = 18 * 18 * 3;
   let minX = rect.w, minY = rect.h, maxX = -1, maxY = -1, detected = 0;
   for (let y = 0; y < rect.h; y++) for (let x = 0; x < rect.w; x++) { const i = (y * rect.w + x) * 4, a = data[i + 3]; if (a <= 8) continue; let content = true; if (!alphaHasTransparency && bg.length) content = !bg.some((c) => colorDistanceSq(data, i, c) <= threshold); if (content) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); detected++; } }
@@ -238,7 +291,7 @@ function alignSelectedFrames(horizontal, vertical) {
   for (const id of ids) { const frame = getFrame(id); if (!frame) continue; const bounds = detectOpaqueBounds(frame); if (!bounds) continue; const rect = getSourceRect(frame); let dx = 0, dy = 0; if (horizontal) dx = Math.round(rect.w / 2 - (bounds.minX + bounds.maxX + 1) / 2); if (vertical) dy = Math.round(rect.h / 2 - (bounds.minY + bounds.maxY + 1) / 2); if (dx || dy) { nudgeSingleFrame(id, dx, dy); changed++; } }
   const first = getFrame(ids[0]); renderOutput(); drawSource(); drawPreview(first); updateInfoDisplays(); setStatus(changed ? `${changed}개 프레임 가운데 정렬` : '정렬할 픽셀 영역을 찾지 못했거나 이미 가운데입니다.');
 }
-function nudgeSingleFrame(id, dx, dy) { const frame = getFrame(id); if (!frame) return; const current = getShift(id), size = getBoxSize(frame); const sx = clamp(frame.sx + current.x + dx, 0, state.image.naturalWidth - size.w); const sy = clamp(frame.sy + current.y + dy, 0, state.image.naturalHeight - size.h); setShift(id, { x: sx - frame.sx, y: sy - frame.sy }); }
+function nudgeSingleFrame(id, dx, dy) { const frame = getFrame(id); if (!frame) return; const current = getShift(id); const sx = clamp(frame.sx + current.x + dx, 0, Math.max(0, state.image.naturalWidth - 1)); const sy = clamp(frame.sy + current.y + dy, 0, Math.max(0, state.image.naturalHeight - 1)); setShift(id, { x: sx - frame.sx, y: sy - frame.sy }); }
 function moveOutput(from, to) { if (from < 0) from = state.selectedOutputIndex < 0 ? 0 : state.selectedOutputIndex; if (to < 0 || to >= state.outputFrameIds.length) return setStatus('더 이동할 수 없습니다.'); const [item] = state.outputFrameIds.splice(from, 1); state.outputFrameIds.splice(to, 0, item); state.selectedOutputIndex = to; renderOutput(); setStatus('출력 순서 이동'); }
 function play() { if (state.isPlaying || !state.outputFrameIds.length) return; state.isPlaying = true; setStatus('재생 중'); const tick = () => { if (!state.isPlaying) return; const index = state.playIndex % state.outputFrameIds.length; state.selectedOutputIndex = index; drawPreview(getFrame(state.outputFrameIds[index])); renderOutput(); state.playIndex++; state.timerId = setTimeout(tick, 1000 / Math.max(1, Math.min(60, readNumber(ui.fps, 8)))); }; tick(); }
 function exportPng() {
@@ -247,7 +300,7 @@ function exportPng() {
   const cellW = Math.max(...state.outputFrameIds.map((id) => getSourceRect(getFrame(id)).w)); const cellH = Math.max(...state.outputFrameIds.map((id) => getSourceRect(getFrame(id)).h));
   const canvas = document.createElement('canvas'); canvas.width = padX * 2 + cellW * cols + gapX * Math.max(0, cols - 1); canvas.height = padY * 2 + cellH * rows + gapY * Math.max(0, rows - 1); const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
   if (!ui.transparentBg?.checked) { ctx.fillStyle = ui.exportBg?.value || '#d9d9d9'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-  state.outputFrameIds.forEach((id, i) => { const frame = getFrame(id), rect = getSourceRect(frame); const x = padX + (i % cols) * (cellW + gapX), y = padY + Math.floor(i / cols) * (cellH + gapY); ctx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, x, y, rect.w, rect.h); });
+  state.outputFrameIds.forEach((id, i) => { const frame = getFrame(id), rect = getSourceRect(frame); const x = padX + (i % cols) * (cellW + gapX), y = padY + Math.floor(i / cols) * (cellH + gapY); drawFrameImage(ctx, frame, x, y, 1); });
   const link = document.createElement('a'); link.download = `sprite-sheet-${cols}x${rows}-${canvas.width}x${canvas.height}.png`; link.href = canvas.toDataURL('image/png'); document.body.append(link); link.click(); link.remove(); setStatus(`PNG 내보내기 완료: ${canvas.width}x${canvas.height}`);
 }
 function reset() { stop(); state.frames = []; state.frameShifts.clear(); state.frameSizes.clear(); state.selectedFrameIds.clear(); state.outputFrameIds = []; state.selectedOutputIndex = -1; renderFrames(); renderOutput(); drawPreview(null); drawSource(); updateInfoDisplays(); setStatus('초기화 완료'); }
@@ -265,4 +318,4 @@ function bind() {
   });
   ui.source.addEventListener('click', (event) => { if (!state.frames.length) return; const rect = ui.source.getBoundingClientRect(); const zoom = Math.max(1, readNumber(ui.zoom, 2)); const cssScaleX = ui.source.width / rect.width; const cssScaleY = ui.source.height / rect.height; const x = ((event.clientX - rect.left) * cssScaleX) / zoom; const y = ((event.clientY - rect.top) * cssScaleY) / zoom; const frame = state.frames.find((item) => { const r = getSourceRect(item); return x >= r.sx && x < r.sx + r.w && y >= r.sy && y < r.sy + r.h; }); if (frame) selectFrameId(frame.id, event.shiftKey || event.ctrlKey || event.metaKey); });
 }
-bind(); updateInfoDisplays(); setStatus('JS 연결 완료. 기존 추가/제거 기능과 새 크기 보정 기능이 함께 동작합니다.');
+bind(); updateInfoDisplays(); setStatus('JS 연결 완료. 프레임 박스는 원본 밖으로도 확장되고 출력 크기도 함께 확장됩니다.');
