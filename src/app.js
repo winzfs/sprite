@@ -21,6 +21,8 @@ const ui = {
   exportBg: $('exportBgInput'),
   transparentBg: $('transparentBgInput'),
   keepSpacing: $('keepSpacingInput'),
+  nudgeStep: $('nudgeStepInput'),
+  selectedShift: $('selectedShiftInput'),
 };
 
 const sourceCtx = ui.source.getContext('2d', { willReadFrequently: true });
@@ -30,6 +32,7 @@ const state = {
   image: null,
   imageUrl: '',
   frames: [],
+  frameShifts: new Map(),
   selectedFrameIds: new Set(),
   outputFrameIds: [],
   selectedOutputIndex: -1,
@@ -75,6 +78,55 @@ function selectedFrameIds() {
   return Array.from(state.selectedFrameIds);
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getShift(frameId) {
+  return state.frameShifts.get(frameId) || { x: 0, y: 0 };
+}
+
+function setShift(frameId, shift) {
+  if (shift.x === 0 && shift.y === 0) state.frameShifts.delete(frameId);
+  else state.frameShifts.set(frameId, shift);
+}
+
+function getSourceRect(frame) {
+  const shift = getShift(frame.id);
+  const sx = clamp(frame.sx + shift.x, 0, state.image.naturalWidth - frame.w);
+  const sy = clamp(frame.sy + shift.y, 0, state.image.naturalHeight - frame.h);
+  return { sx, sy, w: frame.w, h: frame.h, shiftX: sx - frame.sx, shiftY: sy - frame.sy };
+}
+
+function getActiveFrameIds() {
+  const ids = selectedFrameIds();
+  if (ids.length) return ids;
+  if (state.selectedOutputIndex >= 0 && state.outputFrameIds[state.selectedOutputIndex] !== undefined) {
+    return [state.outputFrameIds[state.selectedOutputIndex]];
+  }
+  return [];
+}
+
+function updateShiftDisplay() {
+  if (!ui.selectedShift) return;
+  const ids = getActiveFrameIds();
+  if (!ids.length) {
+    ui.selectedShift.value = '선택 없음';
+    return;
+  }
+  if (ids.length === 1) {
+    const frame = getFrame(ids[0]);
+    if (!frame) {
+      ui.selectedShift.value = '선택 없음';
+      return;
+    }
+    const rect = getSourceRect(frame);
+    ui.selectedShift.value = `#${ids[0]} x:${rect.shiftX}, y:${rect.shiftY}`;
+    return;
+  }
+  ui.selectedShift.value = `${ids.length}개 선택`;
+}
+
 function loadImage(file) {
   if (!file) return;
   stop();
@@ -85,6 +137,7 @@ function loadImage(file) {
   image.onload = () => {
     state.image = image;
     state.imageUrl = url;
+    state.frameShifts.clear();
     autoDetect();
     setStatus(`로드 완료: ${file.name} / ${image.naturalWidth}x${image.naturalHeight}`);
   };
@@ -132,7 +185,8 @@ function autoDetect() {
   ui.fh.value = grid.fh;
   ui.cols.value = grid.cols;
   ui.rows.value = grid.rows;
-  sliceFrames({ keepOutput: false, silent: true });
+  state.frameShifts.clear();
+  sliceFrames({ keepOutput: false, keepShifts: false, silent: true });
   setStatus(`자동 추정: 전체 이미지 기준 ${grid.cols}열 x ${grid.rows}행 / ${grid.fw}x${grid.fh}px`);
 }
 
@@ -150,7 +204,8 @@ function fitWholeSheet() {
   ui.gy.value = 0;
   ui.fw.value = Math.max(1, Math.floor(state.image.naturalWidth / cols));
   ui.fh.value = Math.max(1, Math.floor(state.image.naturalHeight / rows));
-  sliceFrames({ keepOutput: false, silent: true });
+  state.frameShifts.clear();
+  sliceFrames({ keepOutput: false, keepShifts: false, silent: true });
   setStatus(`전체 균등 적용: ${cols}열 x ${rows}행 / ${ui.fw.value}x${ui.fh.value}px`);
 }
 
@@ -189,10 +244,19 @@ function sliceFrames(options = {}) {
     else state.selectedOutputIndex = Math.min(state.selectedOutputIndex, state.outputFrameIds.length - 1);
   }
 
+  if (!options.keepShifts) {
+    state.frameShifts.clear();
+  } else {
+    for (const frameId of Array.from(state.frameShifts.keys())) {
+      if (frameId >= frames.length) state.frameShifts.delete(frameId);
+    }
+  }
+
   renderFrames();
   renderOutput();
   drawSource();
   drawPreview(frames[0] || null);
+  updateShiftDisplay();
   state.lastSliceText = `${frames.length}개 프레임 / ${s.cols}열 x ${s.rows}행 / ${s.fw}x${s.fh}px`;
   if (!options.silent) setStatus(`분할 갱신: ${state.lastSliceText}`);
 }
@@ -227,16 +291,27 @@ function drawSource() {
   const frames = state.frames.length ? state.frames : previewFrames();
   sourceCtx.font = `${Math.max(10, 10 * zoom)}px sans-serif`;
   for (const frame of frames) {
+    const rect = state.image ? getSourceRect(frame) : frame;
+    const isShifted = rect.shiftX !== 0 || rect.shiftY !== 0;
+    const isSelected = state.selectedFrameIds.has(frame.id);
+
     sourceCtx.strokeStyle = '#60a5fa';
     sourceCtx.strokeRect(frame.sx * zoom + 0.5, frame.sy * zoom + 0.5, frame.w * zoom, frame.h * zoom);
-    if (state.selectedFrameIds.has(frame.id)) {
-      sourceCtx.fillStyle = 'rgba(96,165,250,.25)';
-      sourceCtx.fillRect(frame.sx * zoom, frame.sy * zoom, frame.w * zoom, frame.h * zoom);
+
+    if (isShifted || isSelected) {
+      sourceCtx.strokeStyle = isShifted ? '#fbbf24' : '#93c5fd';
+      sourceCtx.strokeRect(rect.sx * zoom + 1.5, rect.sy * zoom + 1.5, rect.w * zoom - 2, rect.h * zoom - 2);
     }
+
+    if (isSelected) {
+      sourceCtx.fillStyle = 'rgba(96,165,250,.25)';
+      sourceCtx.fillRect(rect.sx * zoom, rect.sy * zoom, rect.w * zoom, rect.h * zoom);
+    }
+
     sourceCtx.fillStyle = 'rgba(0,0,0,.7)';
-    sourceCtx.fillRect(frame.sx * zoom + 2, frame.sy * zoom + 2, 28, 16);
+    sourceCtx.fillRect(rect.sx * zoom + 2, rect.sy * zoom + 2, 28, 16);
     sourceCtx.fillStyle = '#fff';
-    sourceCtx.fillText(String(frame.id), frame.sx * zoom + 6, frame.sy * zoom + 14);
+    sourceCtx.fillText(String(frame.id), rect.sx * zoom + 6, rect.sy * zoom + 14);
   }
 }
 
@@ -245,23 +320,26 @@ function drawPreview(frame) {
     previewCtx.clearRect(0, 0, ui.preview.width, ui.preview.height);
     return;
   }
+  const rect = getSourceRect(frame);
   const scale = Math.max(1, Math.min(8, Math.floor(128 / Math.max(frame.w, frame.h))));
   ui.preview.width = frame.w * scale;
   ui.preview.height = frame.h * scale;
   previewCtx.imageSmoothingEnabled = false;
   previewCtx.clearRect(0, 0, ui.preview.width, ui.preview.height);
-  previewCtx.drawImage(state.image, frame.sx, frame.sy, frame.w, frame.h, 0, 0, ui.preview.width, ui.preview.height);
+  previewCtx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, 0, 0, ui.preview.width, ui.preview.height);
 }
 
 function createCard(frame, label) {
+  const rect = getSourceRect(frame);
   const card = document.createElement('div');
   card.className = 'frame-card';
+  if (rect.shiftX !== 0 || rect.shiftY !== 0) card.classList.add('shifted');
   const canvas = document.createElement('canvas');
   canvas.width = frame.w;
   canvas.height = frame.h;
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(state.image, frame.sx, frame.sy, frame.w, frame.h, 0, 0, frame.w, frame.h);
+  ctx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, 0, 0, frame.w, frame.h);
   const badge = document.createElement('span');
   badge.className = 'frame-index';
   badge.textContent = String(label);
@@ -287,7 +365,50 @@ function toggleFrame(frame, multi) {
   drawPreview(frame);
   renderFrames();
   drawSource();
+  updateShiftDisplay();
   setStatus(`프레임 ${frame.id} 선택`);
+}
+
+function nudgeSelectedFrames(dx, dy) {
+  const ids = getActiveFrameIds();
+  if (!ids.length) {
+    setStatus('위치를 조정할 프레임을 먼저 선택하세요.');
+    return;
+  }
+
+  for (const id of ids) {
+    const frame = getFrame(id);
+    if (!frame) continue;
+    const current = getShift(id);
+    const nextRaw = { x: current.x + dx, y: current.y + dy };
+    const sx = clamp(frame.sx + nextRaw.x, 0, state.image.naturalWidth - frame.w);
+    const sy = clamp(frame.sy + nextRaw.y, 0, state.image.naturalHeight - frame.h);
+    setShift(id, { x: sx - frame.sx, y: sy - frame.sy });
+  }
+
+  const firstFrame = getFrame(ids[0]);
+  renderFrames();
+  renderOutput();
+  drawSource();
+  drawPreview(firstFrame);
+  updateShiftDisplay();
+  setStatus(`${ids.length}개 프레임 위치 보정: x ${dx}, y ${dy}`);
+}
+
+function resetSelectedFrameShifts() {
+  const ids = getActiveFrameIds();
+  if (!ids.length) {
+    setStatus('보정을 초기화할 프레임을 먼저 선택하세요.');
+    return;
+  }
+  for (const id of ids) state.frameShifts.delete(id);
+  const firstFrame = getFrame(ids[0]);
+  renderFrames();
+  renderOutput();
+  drawSource();
+  drawPreview(firstFrame);
+  updateShiftDisplay();
+  setStatus(`${ids.length}개 프레임 위치 보정 초기화`);
 }
 
 function addOutput(frameIds) {
@@ -315,12 +436,19 @@ function renderOutput() {
     const frame = getFrame(id);
     if (!frame) return;
     const card = createCard(frame, index + 1);
+    card.classList.remove('frame-card');
+    card.classList.add('output-card');
     if (state.selectedOutputIndex === index) card.classList.add('selected');
     card.draggable = true;
     card.addEventListener('click', () => {
       state.selectedOutputIndex = index;
+      state.selectedFrameIds.clear();
+      state.selectedFrameIds.add(id);
       drawPreview(frame);
+      renderFrames();
       renderOutput();
+      drawSource();
+      updateShiftDisplay();
       setStatus(`출력 ${index + 1}번 선택`);
     });
     card.addEventListener('dragstart', () => { state.dragIndex = index; });
@@ -357,6 +485,7 @@ function moveOutput(from, to) {
   state.selectedOutputIndex = to;
   renderOutput();
   drawPreview(getFrame(state.outputFrameIds[to]));
+  updateShiftDisplay();
   setStatus('출력 순서를 이동했습니다.');
 }
 
@@ -369,8 +498,10 @@ function play() {
     if (!state.isPlaying) return;
     const index = state.playIndex % state.outputFrameIds.length;
     state.selectedOutputIndex = index;
-    drawPreview(getFrame(state.outputFrameIds[index]));
+    const frame = getFrame(state.outputFrameIds[index]);
+    drawPreview(frame);
     renderOutput();
+    updateShiftDisplay();
     state.playIndex += 1;
     const fps = Math.max(1, Math.min(60, readNumber(ui.fps, 8)));
     state.timerId = window.setTimeout(tick, 1000 / fps);
@@ -410,11 +541,12 @@ function exportPng() {
   state.outputFrameIds.forEach((id, index) => {
     const frame = getFrame(id);
     if (!frame) return;
+    const rect = getSourceRect(frame);
     const col = index % cols;
     const row = Math.floor(index / cols);
     const dx = padX + col * (cellW + gapX);
     const dy = padY + row * (cellH + gapY);
-    ctx.drawImage(state.image, frame.sx, frame.sy, frame.w, frame.h, dx, dy, cellW, cellH);
+    ctx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, dx, dy, cellW, cellH);
   });
 
   const link = document.createElement('a');
@@ -423,12 +555,13 @@ function exportPng() {
   document.body.append(link);
   link.click();
   link.remove();
-  setStatus(`PNG 내보내기 완료: ${canvas.width}x${canvas.height} / 여백 ${padX},${padY} / 간격 ${gapX},${gapY}`);
+  setStatus(`PNG 내보내기 완료: ${canvas.width}x${canvas.height} / 위치 보정 ${state.frameShifts.size}개 적용`);
 }
 
 function reset() {
   stop();
   state.frames = [];
+  state.frameShifts.clear();
   state.selectedFrameIds.clear();
   state.outputFrameIds = [];
   state.selectedOutputIndex = -1;
@@ -437,6 +570,7 @@ function reset() {
   renderOutput();
   drawSource();
   drawPreview(null);
+  updateShiftDisplay();
   setStatus('초기화 완료');
 }
 
@@ -444,16 +578,22 @@ function bind() {
   ui.file.addEventListener('change', (event) => loadImage(event.target.files[0]));
   ui.zoom.addEventListener('input', drawSource);
   [ui.fw, ui.fh, ui.cols, ui.rows, ui.ox, ui.oy, ui.gx, ui.gy].forEach((input) => {
-    input.addEventListener('input', () => sliceFrames({ keepOutput: true, silent: false }));
+    input.addEventListener('input', () => sliceFrames({ keepOutput: true, keepShifts: true, silent: false }));
   });
 
   document.addEventListener('click', (event) => {
     const id = event.target.id;
+    const step = Math.max(1, readNumber(ui.nudgeStep, 1));
     if (id === 'testButton') setStatus('버튼 동작 정상입니다.');
     if (id === 'autoDetectButton') autoDetect();
     if (id === 'fitWholeButton') fitWholeSheet();
-    if (id === 'sliceButton') sliceFrames({ keepOutput: false, silent: false });
+    if (id === 'sliceButton') sliceFrames({ keepOutput: false, keepShifts: false, silent: false });
     if (id === 'resetButton') reset();
+    if (id === 'nudgeUpButton') nudgeSelectedFrames(0, -step);
+    if (id === 'nudgeDownButton') nudgeSelectedFrames(0, step);
+    if (id === 'nudgeLeftButton') nudgeSelectedFrames(-step, 0);
+    if (id === 'nudgeRightButton') nudgeSelectedFrames(step, 0);
+    if (id === 'nudgeResetButton') resetSelectedFrameShifts();
     if (id === 'playButton') play();
     if (id === 'stopButton') { stop(); setStatus('재생 정지'); }
     if (id === 'addSelectedButton') addOutput(selectedFrameIds());
@@ -466,12 +606,14 @@ function bind() {
       state.outputFrameIds.splice(state.selectedOutputIndex, 1);
       state.selectedOutputIndex = Math.min(state.selectedOutputIndex, state.outputFrameIds.length - 1);
       renderOutput();
+      updateShiftDisplay();
       setStatus('선택 출력 프레임 제거');
     }
     if (id === 'clearOutputButton') {
       state.outputFrameIds = [];
       state.selectedOutputIndex = -1;
       renderOutput();
+      updateShiftDisplay();
       setStatus('출력 비움');
     }
     if (id === 'exportButton') exportPng();
@@ -483,10 +625,14 @@ function bind() {
     const zoom = Math.max(1, readNumber(ui.zoom, 2));
     const x = (event.clientX - rect.left) / zoom;
     const y = (event.clientY - rect.top) / zoom;
-    const frame = state.frames.find((item) => x >= item.sx && x < item.sx + item.w && y >= item.sy && y < item.sy + item.h);
+    const frame = state.frames.find((item) => {
+      const sourceRect = getSourceRect(item);
+      return x >= sourceRect.sx && x < sourceRect.sx + sourceRect.w && y >= sourceRect.sy && y < sourceRect.sy + sourceRect.h;
+    });
     if (frame) toggleFrame(frame, event.shiftKey);
   });
 }
 
 bind();
-setStatus('JS 연결 완료. 행/열 입력 변경 시 프레임이 즉시 갱신됩니다.');
+updateShiftDisplay();
+setStatus('JS 연결 완료. 프레임 선택 후 상하좌우로 원본 위치를 보정할 수 있습니다.');
