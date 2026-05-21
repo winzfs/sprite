@@ -411,6 +411,96 @@ function resetSelectedFrameShifts() {
   setStatus(`${ids.length}개 프레임 위치 보정 초기화`);
 }
 
+function detectOpaqueBounds(frame) {
+  if (!state.image || !frame) return null;
+
+  const rect = getSourceRect(frame);
+  const canvas = document.createElement('canvas');
+  canvas.width = frame.w;
+  canvas.height = frame.h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(state.image, rect.sx, rect.sy, rect.w, rect.h, 0, 0, frame.w, frame.h);
+
+  const data = ctx.getImageData(0, 0, frame.w, frame.h).data;
+  let minX = frame.w;
+  let minY = frame.h;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < frame.h; y += 1) {
+    for (let x = 0; x < frame.w; x += 1) {
+      const alpha = data[(y * frame.w + x) * 4 + 3];
+      if (alpha > 8) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function alignSelectedFrames(horizontal, vertical) {
+  const ids = getActiveFrameIds();
+  if (!ids.length) {
+    setStatus('가운데 정렬할 프레임을 먼저 선택하세요.');
+    return;
+  }
+
+  let changedCount = 0;
+
+  for (const id of ids) {
+    const frame = getFrame(id);
+    if (!frame) continue;
+
+    const bounds = detectOpaqueBounds(frame);
+    if (!bounds) continue;
+
+    let dx = 0;
+    let dy = 0;
+
+    if (horizontal) {
+      const contentCenterX = (bounds.minX + bounds.maxX + 1) / 2;
+      const frameCenterX = frame.w / 2;
+      dx = Math.round(frameCenterX - contentCenterX);
+    }
+
+    if (vertical) {
+      const contentCenterY = (bounds.minY + bounds.maxY + 1) / 2;
+      const frameCenterY = frame.h / 2;
+      dy = Math.round(frameCenterY - contentCenterY);
+    }
+
+    if (dx === 0 && dy === 0) continue;
+
+    const current = getShift(id);
+    const sx = clamp(frame.sx + current.x + dx, 0, state.image.naturalWidth - frame.w);
+    const sy = clamp(frame.sy + current.y + dy, 0, state.image.naturalHeight - frame.h);
+    setShift(id, { x: sx - frame.sx, y: sy - frame.sy });
+    changedCount += 1;
+  }
+
+  const firstFrame = getFrame(ids[0]);
+  renderFrames();
+  renderOutput();
+  drawSource();
+  drawPreview(firstFrame);
+  updateShiftDisplay();
+
+  if (!changedCount) {
+    setStatus('정렬할 픽셀 영역을 찾지 못했거나 이미 가운데입니다.');
+    return;
+  }
+
+  if (horizontal && vertical) setStatus(`${changedCount}개 프레임을 픽셀 기준 가운데 정렬했습니다.`);
+  else if (horizontal) setStatus(`${changedCount}개 프레임을 픽셀 기준 좌우 가운데 정렬했습니다.`);
+  else if (vertical) setStatus(`${changedCount}개 프레임을 픽셀 기준 상하 가운데 정렬했습니다.`);
+}
+
 function addOutput(frameIds) {
   if (!state.frames.length) {
     setStatus('먼저 이미지를 업로드하고 프레임을 나누세요.');
@@ -594,6 +684,9 @@ function bind() {
     if (id === 'nudgeLeftButton') nudgeSelectedFrames(-step, 0);
     if (id === 'nudgeRightButton') nudgeSelectedFrames(step, 0);
     if (id === 'nudgeResetButton') resetSelectedFrameShifts();
+    if (id === 'centerXButton') alignSelectedFrames(true, false);
+    if (id === 'centerYButton') alignSelectedFrames(false, true);
+    if (id === 'centerBothButton') alignSelectedFrames(true, true);
     if (id === 'playButton') play();
     if (id === 'stopButton') { stop(); setStatus('재생 정지'); }
     if (id === 'addSelectedButton') addOutput(selectedFrameIds());
@@ -635,4 +728,4 @@ function bind() {
 
 bind();
 updateShiftDisplay();
-setStatus('JS 연결 완료. 프레임 선택 후 상하좌우로 원본 위치를 보정할 수 있습니다.');
+setStatus('JS 연결 완료. 픽셀 기준 가운데 정렬을 사용할 수 있습니다.');
