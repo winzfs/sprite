@@ -133,6 +133,19 @@ label {
 .nudge-pad .button-row { display: contents; }
 .nudge-pad .button-row button { flex: none; }
 
+.align-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.align-row button {
+  min-width: 0;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
 .hint, .status { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .status { min-height: 20px; color: #b8ffcf; }
 .center-panel { min-height: 660px; }
@@ -224,4 +237,5 @@ label {
     padding: 8px 6px;
   }
   #nudgeResetButton { font-size: 11px; }
+  .align-row { grid-template-columns: 1fr; gap: 6px; }
 }
