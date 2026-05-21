@@ -120,7 +120,7 @@
       return;
     }
     if (!isGifEncoderReady()) {
-      setText(v2g.status, 'GIF 인코더를 불러오지 못했습니다. 네트워크/CDN 연결을 확인하세요.');
+      setText(v2g.status, '로컬 GIF 인코더를 불러오지 못했습니다. src/vendor/gif.js 로드를 확인하세요.');
       return;
     }
     if (!v2g.video.videoWidth) await loadVideoFile(v2g.input.files[0]);
@@ -152,12 +152,12 @@
       ctx.imageSmoothingEnabled = true;
 
       const gif = new window.GIF({
-        workers: 2,
+        workers: 0,
         quality,
         width: targetWidth,
         height: targetHeight,
         repeat: v2g.loop.checked ? 0 : -1,
-        workerScript: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js',
+        workerScript: 'src/vendor/gif.worker.js',
       });
 
       for (let i = 0; i < frameCount; i += 1) {
@@ -171,7 +171,7 @@
 
       const blob = await new Promise((resolve, reject) => {
         gif.on('finished', resolve);
-        gif.on('abort', () => reject(new Error('GIF 변환이 중단되었습니다.')));
+        gif.on('abort', (error) => reject(error instanceof Error ? error : new Error('GIF 변환이 중단되었습니다.')));
         gif.render();
       });
 
