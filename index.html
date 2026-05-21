@@ -45,6 +45,7 @@
 
         <div class="button-row">
           <button id="autoDetectButton" class="primary">자동 추정</button>
+          <button id="fitWholeButton">전체 균등 분할</button>
           <button id="sliceButton">프레임 나누기</button>
           <button id="resetButton" class="danger">초기화</button>
         </div>
@@ -55,7 +56,7 @@
         </label>
 
         <p class="hint">
-          자동 추정은 이미지 크기와 투명/단색 여백을 기준으로 시작값을 잡습니다. 정확한 결과가 필요하면 프레임 크기, 행/열, 오프셋, 간격을 직접 보정하세요.
+          자동 추정은 원본 전체를 균등 분할하는 값을 우선 사용합니다. 원본 캔버스의 파란 프레임을 클릭하면 해당 프레임이 선택되고, Shift+클릭으로 다중 선택할 수 있습니다.
         </p>
         <div id="statusText" class="status"></div>
       </div>
@@ -88,6 +89,8 @@
         </div>
 
         <div class="button-row">
+          <button id="moveOutputLeftButton">앞으로</button>
+          <button id="moveOutputRightButton">뒤로</button>
           <button id="removeSelectedOutputButton" class="danger">선택 제거</button>
           <button id="clearOutputButton" class="danger">출력 비우기</button>
           <button id="exportButton" class="primary">PNG 내보내기</button>
