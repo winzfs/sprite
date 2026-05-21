@@ -214,13 +214,35 @@ label {
   background: var(--panel-2);
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.output-card {
+  touch-action: pan-y;
+}
+
+.output-list.touch-reordering {
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.output-list.touch-reordering .output-card {
+  cursor: grabbing;
+}
+
+.output-card.reorder-source {
+  opacity: 0.72;
+  outline: 2px solid var(--primary);
+  transform: scale(0.96);
 }
 
 .frame-card.selected, .output-card.selected { outline: 2px solid var(--primary); border-color: var(--primary); }
 .frame-card.shifted, .output-card.shifted { border-color: #fbbf24; }
-.frame-card canvas, .output-card canvas { image-rendering: pixelated; width: 80%; height: 80%; object-fit: contain; }
-.frame-index { position: absolute; left: 4px; top: 3px; padding: 1px 4px; border-radius: 999px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 10px; }
+.frame-card canvas, .output-card canvas { image-rendering: pixelated; width: 80%; height: 80%; object-fit: contain; pointer-events: none; }
+.frame-index { position: absolute; left: 4px; top: 3px; padding: 1px 4px; border-radius: 999px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 10px; pointer-events: none; }
 .drop-target { outline: 2px dashed var(--primary); }
+.hidden { display: none !important; }
 
 @media (max-width: 1160px) {
   .app-layout { grid-template-columns: 1fr; }
