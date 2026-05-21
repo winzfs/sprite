@@ -188,7 +188,6 @@ label {
 
 .frame-list, .output-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
   gap: 8px;
   max-height: 230px;
   overflow: auto;
@@ -198,11 +197,18 @@ label {
   background: rgba(15, 19, 27, 0.86);
 }
 
+.fixed-grid-list {
+  grid-auto-flow: row;
+  align-items: stretch;
+}
+
 .frame-card, .output-card {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 54px;
+  min-width: 0;
+  min-height: 44px;
+  aspect-ratio: 1 / 1;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel-2);
@@ -212,7 +218,7 @@ label {
 
 .frame-card.selected, .output-card.selected { outline: 2px solid var(--primary); border-color: var(--primary); }
 .frame-card.shifted, .output-card.shifted { border-color: #fbbf24; }
-.frame-card canvas, .output-card canvas { image-rendering: pixelated; max-width: 44px; max-height: 44px; }
+.frame-card canvas, .output-card canvas { image-rendering: pixelated; width: 80%; height: 80%; object-fit: contain; }
 .frame-index { position: absolute; left: 4px; top: 3px; padding: 1px 4px; border-radius: 999px; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 10px; }
 .drop-target { outline: 2px dashed var(--primary); }
 
@@ -228,6 +234,23 @@ label {
   .grid-2 { grid-template-columns: 1fr; }
   .button-row { gap: 6px; }
   .button-row button { flex: 1 1 calc(50% - 6px); }
+  .frame-list, .output-list {
+    gap: 4px;
+    padding: 4px;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+  .frame-card, .output-card {
+    min-height: 0;
+    border-radius: 6px;
+  }
+  .frame-index {
+    left: 2px;
+    top: 2px;
+    font-size: 8px;
+    padding: 0 3px;
+  }
   .nudge-pad {
     width: min(100%, 240px);
     gap: 6px;
