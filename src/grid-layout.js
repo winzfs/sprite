@@ -1,6 +1,5 @@
 const gridState = {
   sourceCols: 1,
-  exportCols: 6,
 };
 
 function readPositiveIntById(id, fallback) {
@@ -15,7 +14,6 @@ function applyFixedFrameGrids() {
   const outputList = document.getElementById('outputList');
 
   gridState.sourceCols = readPositiveIntById('sourceColsInput', gridState.sourceCols);
-  gridState.exportCols = readPositiveIntById('exportColsInput', gridState.exportCols);
 
   if (frameList) {
     frameList.style.gridTemplateColumns = `repeat(${gridState.sourceCols}, minmax(0, 1fr))`;
@@ -23,19 +21,17 @@ function applyFixedFrameGrids() {
   }
 
   if (outputList) {
-    outputList.style.gridTemplateColumns = `repeat(${gridState.exportCols}, minmax(0, 1fr))`;
-    outputList.dataset.cols = String(gridState.exportCols);
+    outputList.style.gridTemplateColumns = `repeat(${gridState.sourceCols}, minmax(0, 1fr))`;
+    outputList.dataset.cols = String(gridState.sourceCols);
   }
 }
 
 function bindFixedFrameGrids() {
   const sourceColsInput = document.getElementById('sourceColsInput');
-  const exportColsInput = document.getElementById('exportColsInput');
   const frameList = document.getElementById('frameList');
   const outputList = document.getElementById('outputList');
 
   sourceColsInput?.addEventListener('input', applyFixedFrameGrids);
-  exportColsInput?.addEventListener('input', applyFixedFrameGrids);
 
   const observer = new MutationObserver(applyFixedFrameGrids);
   if (frameList) observer.observe(frameList, { childList: true });
