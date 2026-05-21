@@ -5,15 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sprite Tool Studio</title>
   <link rel="stylesheet" href="styles.css?v=23">
-  <link rel="stylesheet" href="tool-shell.css?v=25">
+  <link rel="stylesheet" href="tool-shell.css?v=27">
 </head>
 <body>
   <div class="shell">
     <aside class="sidebar">
       <div class="sidebar-title">Sprite Tools</div>
-      <button class="nav-btn active" type="button" data-view="sprite">스프라이트 편집기</button>
-      <button class="nav-btn" type="button" data-view="videoToGif">영상 → GIF</button>
-      <button class="nav-btn" type="button" data-view="gifToVideo">GIF → 영상</button>
+      <nav class="side-nav" aria-label="도구 메뉴">
+        <details class="nav-group" open>
+          <summary>스프라이트 도구</summary>
+          <div class="nav-group-items">
+            <button class="nav-btn active" type="button" data-view="sprite">스프라이트 편집기</button>
+            <p class="nav-help">시트 분할, 프레임 보정, PNG 출력</p>
+          </div>
+        </details>
+        <details class="nav-group" open>
+          <summary>미디어 변환</summary>
+          <div class="nav-group-items">
+            <button class="nav-btn" type="button" data-view="videoToGif">영상 → GIF</button>
+            <button class="nav-btn" type="button" data-view="gifToVideo">GIF → 영상</button>
+            <p class="nav-help">브라우저 로컬에서 영상/GIF 변환</p>
+          </div>
+        </details>
+      </nav>
     </aside>
 
     <main class="main-content">
