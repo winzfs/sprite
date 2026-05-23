@@ -44,7 +44,7 @@
           <section class="panel">
             <div class="panel-title">1. 분할 설정</div>
             <div class="panel-body controls">
-              <label>이미지 업로드 <input id="fileInput" type="file" accept="image/*"></label>
+              <label>이미지 업로드 <input id="fileInput" type="file" accept="image/*,.tga,.TGA"></label>
               <div class="grid-2">
                 <label>기본 프레임 너비 <input id="frameWidthInput" type="number" min="1" value="32"></label>
                 <label>기본 프레임 높이 <input id="frameHeightInput" type="number" min="1" value="32"></label>
@@ -239,7 +239,9 @@
   </div>
 
   <script src="src/vendor/gif.js?v=26" defer></script>
+  <script src="src/vendor/tga-decoder.js?v=1" defer></script>
   <script src="src/app.js?v=23" defer></script>
+  <script src="src/tga-support.js?v=1" defer></script>
   <script src="src/grid-layout.js?v=23" defer></script>
   <script src="src/ui-shell.js?v=28" defer></script>
   <script src="src/media-converter.js?v=25" defer></script>
