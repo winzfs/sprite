@@ -1,5 +1,7 @@
 (() => {
   const VIEW_KEY = 'audioConverter';
+  let lastDecoded = null;
+  let lastFile = null;
 
   const recorderFormats = [
     { value: 'audio/webm;codecs=opus', label: 'WebM / Opus' },
@@ -18,6 +20,13 @@
   function readNumber(input, fallback) {
     const value = Number.parseFloat(input?.value);
     return Number.isFinite(value) ? value : fallback;
+  }
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return '-';
+    if (bytes < 1024) return `${bytes.toFixed(0)} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
   }
 
   function closeMenu() {
@@ -97,6 +106,7 @@
                 </select>
               </label>
             </div>
+            <pre id="audioEstimateInfo" class="media-info">출력 예상 정보: 파일을 선택하세요.</pre>
             <div class="button-row">
               <button id="audioReadButton" type="button">정보 읽기</button>
               <button id="audioConvertButton" type="button" class="primary">변환</button>
@@ -111,6 +121,7 @@
           <div class="panel-body controls">
             <audio id="audioPreview" class="audio-preview" controls></audio>
             <pre id="audioInfo" class="media-info">파일을 선택하세요.</pre>
+            <pre id="audioOutputInfo" class="media-info">출력 결과 정보: 아직 변환 전입니다.</pre>
           </div>
         </section>
       </main>
@@ -142,15 +153,88 @@
     }
   }
 
+  function getTargetSpec(buffer) {
+    const sampleRate = Math.round(readNumber($('audioSampleRateInput'), 0)) || buffer?.sampleRate || 44100;
+    const channels = Math.round(readNumber($('audioChannelsInput'), 0)) || buffer?.numberOfChannels || 2;
+    const format = $('audioFormatInput')?.value || 'wav';
+    const bitrate = Math.max(32, Math.min(512, Math.round(readNumber($('audioBitrateInput'), 128))));
+    return { sampleRate, channels, format, bitrate };
+  }
+
+  function outputExtension(format) {
+    if (format === 'wav') return 'wav';
+    if (format.includes('ogg')) return 'ogg';
+    return 'webm';
+  }
+
+  function estimateOutputBytes(buffer) {
+    if (!buffer) return null;
+    const { sampleRate, channels, format, bitrate } = getTargetSpec(buffer);
+    if (format === 'wav') {
+      return 44 + Math.ceil(buffer.duration * sampleRate) * channels * 2;
+    }
+    return Math.ceil((buffer.duration * bitrate * 1000) / 8);
+  }
+
+  function updateEstimate() {
+    const estimate = $('audioEstimateInfo');
+    if (!estimate) return;
+    if (!lastDecoded) {
+      estimate.textContent = '출력 예상 정보: 파일을 선택하세요.';
+      return;
+    }
+
+    const { sampleRate, channels, format, bitrate } = getTargetSpec(lastDecoded);
+    const estimatedBytes = estimateOutputBytes(lastDecoded);
+    const ext = outputExtension(format);
+    const isCompressed = format !== 'wav';
+
+    estimate.textContent = [
+      '출력 예상 정보',
+      `예상 포맷: ${format === 'wav' ? 'WAV / PCM 16-bit' : format}`,
+      `예상 확장자: .${ext}`,
+      `예상 샘플레이트: ${sampleRate} Hz`,
+      `예상 채널: ${channels}`,
+      isCompressed ? `목표 비트전송률: ${bitrate} kbps` : '비트전송률: WAV PCM은 설정값을 사용하지 않음',
+      `예상 용량: 약 ${formatBytes(estimatedBytes)}`,
+      isCompressed ? '참고: 압축 포맷 실제 용량은 브라우저 인코더에 따라 달라질 수 있습니다.' : '참고: WAV는 무압축이라 예상 용량과 실제 용량이 거의 같습니다.',
+    ].join('\n');
+  }
+
   function updateInfo(file, buffer) {
     const info = $('audioInfo');
     if (!info) return;
+    const sourceBitrate = buffer.duration > 0 ? (file.size * 8 / buffer.duration / 1000) : 0;
     info.textContent = [
+      '입력 정보',
       `파일명: ${file.name}`,
-      `크기: ${(file.size / 1024 / 1024).toFixed(2)} MB`,
+      `입력 용량: ${formatBytes(file.size)}`,
+      `입력 평균 비트전송률: 약 ${sourceBitrate.toFixed(0)} kbps`,
       `길이: ${buffer.duration.toFixed(2)}초`,
       `샘플레이트: ${buffer.sampleRate} Hz`,
       `채널: ${buffer.numberOfChannels}`,
+    ].join('\n');
+    lastFile = file;
+    lastDecoded = buffer;
+    updateEstimate();
+  }
+
+  function updateOutputInfo({ file, blob, format, rendered, ext }) {
+    const outputInfo = $('audioOutputInfo');
+    if (!outputInfo) return;
+    const bitrate = rendered.duration > 0 ? (blob.size * 8 / rendered.duration / 1000) : 0;
+    const sourceSize = file?.size || 0;
+    const ratio = sourceSize > 0 ? (blob.size / sourceSize) * 100 : 0;
+    outputInfo.textContent = [
+      '출력 결과 정보',
+      `파일명: ${(file?.name || 'converted').replace(/\.[^.]+$/, '')}.${ext}`,
+      `실제 용량: ${formatBytes(blob.size)}`,
+      `입력 대비: ${ratio.toFixed(1)}%`,
+      `실제 평균 비트전송률: 약 ${bitrate.toFixed(0)} kbps`,
+      `출력 포맷: ${format === 'wav' ? 'WAV / PCM 16-bit' : format}`,
+      `출력 샘플레이트: ${rendered.sampleRate} Hz`,
+      `출력 채널: ${rendered.numberOfChannels}`,
+      `길이: ${rendered.duration.toFixed(2)}초`,
     ].join('\n');
   }
 
@@ -289,6 +373,7 @@
       convertButton.disabled = true;
       progress.value = 0;
       $('audioDownloadLink')?.classList.add('hidden');
+      $('audioOutputInfo').textContent = '출력 결과 정보: 변환 중...';
       setStatus('오디오 디코딩 중...');
       const decoded = await decodeFile(file);
       updateInfo(file, decoded);
@@ -310,13 +395,14 @@
         const bitrate = Math.max(32, Math.min(512, Math.round(readNumber($('audioBitrateInput'), 128))));
         setStatus(`압축 오디오 생성 중... ${bitrate}kbps`);
         blob = await recordCompressed(rendered, format, bitrate);
-        ext = format.includes('ogg') ? 'ogg' : 'webm';
+        ext = outputExtension(format);
       }
 
       progress.value = 1;
       const baseName = file.name.replace(/\.[^.]+$/, '') || 'converted';
       setDownload(blob, `${baseName}.${ext}`);
-      setStatus(`변환 완료: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+      updateOutputInfo({ file, blob, format, rendered, ext });
+      setStatus(`변환 완료: ${formatBytes(blob.size)}`);
     } catch (error) {
       setStatus(`오디오 변환 실패: ${error.message}`);
     } finally {
@@ -336,10 +422,15 @@
       const url = URL.createObjectURL(file);
       preview.src = url;
       preview.dataset.objectUrl = url;
+      $('audioOutputInfo').textContent = '출력 결과 정보: 아직 변환 전입니다.';
       readInfo();
     });
     $('audioReadButton')?.addEventListener('click', readInfo);
     $('audioConvertButton')?.addEventListener('click', convert);
+    $('audioFormatInput')?.addEventListener('change', updateEstimate);
+    $('audioBitrateInput')?.addEventListener('input', updateEstimate);
+    $('audioSampleRateInput')?.addEventListener('change', updateEstimate);
+    $('audioChannelsInput')?.addEventListener('change', updateEstimate);
   }
 
   addNav();
