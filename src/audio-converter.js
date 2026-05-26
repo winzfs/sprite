@@ -4,6 +4,9 @@
   let lastFile = null;
 
   const recorderFormats = [
+    { value: 'audio/mp4;codecs=mp4a.40.2', label: 'M4A / AAC' },
+    { value: 'audio/mp4', label: 'MP4 Audio / M4A' },
+    { value: 'audio/aac', label: 'AAC' },
     { value: 'audio/webm;codecs=opus', label: 'WebM / Opus' },
     { value: 'audio/ogg;codecs=opus', label: 'Ogg / Opus' },
     { value: 'audio/webm', label: 'WebM' },
@@ -113,7 +116,7 @@
               <a id="audioDownloadLink" class="download-link hidden" download="converted.wav">다운로드</a>
             </div>
             <progress id="audioProgress" value="0" max="1"></progress>
-            <div id="audioStatus" class="status">지원 입력: MP3, WAV, Ogg, WebM, M4A/AAC, FLAC 등. 실제 지원은 브라우저 코덱에 따라 달라집니다.</div>
+            <div id="audioStatus" class="status">지원 입력: MP3, WAV, Ogg, WebM, M4A/AAC, FLAC 등. 출력 포맷은 현재 브라우저가 지원하는 항목만 표시됩니다.</div>
           </div>
         </section>
         <section class="panel">
@@ -164,7 +167,15 @@
   function outputExtension(format) {
     if (format === 'wav') return 'wav';
     if (format.includes('ogg')) return 'ogg';
+    if (format.includes('mp4')) return 'm4a';
+    if (format.includes('aac')) return 'aac';
     return 'webm';
+  }
+
+  function outputFormatLabel(format) {
+    if (format === 'wav') return 'WAV / PCM 16-bit';
+    const match = recorderFormats.find((item) => item.value === format);
+    return match ? match.label : format;
   }
 
   function estimateOutputBytes(buffer) {
@@ -191,7 +202,7 @@
 
     estimate.textContent = [
       '출력 예상 정보',
-      `예상 포맷: ${format === 'wav' ? 'WAV / PCM 16-bit' : format}`,
+      `예상 포맷: ${outputFormatLabel(format)}`,
       `예상 확장자: .${ext}`,
       `예상 샘플레이트: ${sampleRate} Hz`,
       `예상 채널: ${channels}`,
@@ -231,7 +242,7 @@
       `실제 용량: ${formatBytes(blob.size)}`,
       `입력 대비: ${ratio.toFixed(1)}%`,
       `실제 평균 비트전송률: 약 ${bitrate.toFixed(0)} kbps`,
-      `출력 포맷: ${format === 'wav' ? 'WAV / PCM 16-bit' : format}`,
+      `출력 포맷: ${outputFormatLabel(format)}`,
       `출력 샘플레이트: ${rendered.sampleRate} Hz`,
       `출력 채널: ${rendered.numberOfChannels}`,
       `길이: ${rendered.duration.toFixed(2)}초`,
