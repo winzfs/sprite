@@ -3,6 +3,7 @@
   const LOCAL_MP3_FORMAT = 'mp3-lame';
   let lastDecoded = null;
   let lastFile = null;
+  let trimPreviewStopHandler = null;
 
   const recorderFormats = [
     { value: 'audio/mp4;codecs=mp4a.40.2', label: 'M4A / AAC' },
@@ -31,6 +32,11 @@
     if (bytes < 1024) return `${bytes.toFixed(0)} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  }
+
+  function formatTime(seconds) {
+    if (!Number.isFinite(seconds)) return '0.000';
+    return Math.max(0, seconds).toFixed(3);
   }
 
   function closeMenu() {
@@ -110,6 +116,16 @@
                 </select>
               </label>
             </div>
+            <div class="grid-2">
+              <label>자르기 시작(초) <input id="audioTrimStartInput" type="number" min="0" step="0.001" value="0"></label>
+              <label>자르기 끝(초) <input id="audioTrimEndInput" type="number" min="0" step="0.001" value="0"></label>
+            </div>
+            <div class="button-row">
+              <button id="audioTrimFullButton" type="button">전체 구간</button>
+              <button id="audioTrimUseCurrentStartButton" type="button">현재 위치를 시작</button>
+              <button id="audioTrimUseCurrentEndButton" type="button">현재 위치를 끝</button>
+              <button id="audioTrimPreviewButton" type="button">선택 구간 재생</button>
+            </div>
             <pre id="audioEstimateInfo" class="media-info">출력 예상 정보: 파일을 선택하세요.</pre>
             <div class="button-row">
               <button id="audioReadButton" type="button">정보 읽기</button>
@@ -167,6 +183,87 @@
     }
   }
 
+  function getTrimRange(buffer, strict = false) {
+    const totalDuration = Math.max(0, buffer?.duration || 0);
+    let start = readNumber($('audioTrimStartInput'), 0);
+    let end = readNumber($('audioTrimEndInput'), totalDuration || 0);
+
+    start = Math.max(0, Math.min(totalDuration, start));
+    end = Math.max(0, Math.min(totalDuration, end));
+
+    if (end <= start) {
+      if (strict) throw new Error('자르기 끝 시간은 시작 시간보다 커야 합니다.');
+      end = totalDuration;
+      if (end <= start) start = 0;
+    }
+
+    return {
+      start,
+      end,
+      duration: Math.max(0, end - start),
+      totalDuration,
+    };
+  }
+
+  function syncTrimInputs(buffer) {
+    const startInput = $('audioTrimStartInput');
+    const endInput = $('audioTrimEndInput');
+    if (!startInput || !endInput || !buffer) return;
+
+    const duration = buffer.duration || 0;
+    startInput.max = formatTime(duration);
+    endInput.max = formatTime(duration);
+
+    const currentEnd = readNumber(endInput, 0);
+    if (currentEnd <= 0 || currentEnd > duration) {
+      startInput.value = '0';
+      endInput.value = formatTime(duration);
+    } else {
+      const range = getTrimRange(buffer, false);
+      startInput.value = formatTime(range.start);
+      endInput.value = formatTime(range.end);
+    }
+  }
+
+  function setFullTrim() {
+    if (!lastDecoded) return;
+    $('audioTrimStartInput').value = '0';
+    $('audioTrimEndInput').value = formatTime(lastDecoded.duration);
+    updateEstimate();
+  }
+
+  function useCurrentTimeForTrim(target) {
+    if (!lastDecoded) return;
+    const preview = $('audioPreview');
+    const time = Math.max(0, Math.min(lastDecoded.duration, preview?.currentTime || 0));
+    if (target === 'start') $('audioTrimStartInput').value = formatTime(time);
+    else $('audioTrimEndInput').value = formatTime(time);
+    updateEstimate();
+  }
+
+  function playTrimPreview() {
+    const preview = $('audioPreview');
+    if (!preview || !lastDecoded) return;
+
+    const range = getTrimRange(lastDecoded, true);
+    if (trimPreviewStopHandler) {
+      preview.removeEventListener('timeupdate', trimPreviewStopHandler);
+      trimPreviewStopHandler = null;
+    }
+
+    preview.pause();
+    preview.currentTime = range.start;
+    trimPreviewStopHandler = () => {
+      if (preview.currentTime >= range.end) {
+        preview.pause();
+        preview.removeEventListener('timeupdate', trimPreviewStopHandler);
+        trimPreviewStopHandler = null;
+      }
+    };
+    preview.addEventListener('timeupdate', trimPreviewStopHandler);
+    preview.play().catch((error) => setStatus(`선택 구간 재생 실패: ${error.message}`));
+  }
+
   function getTargetSpec(buffer) {
     const sampleRate = Math.round(readNumber($('audioSampleRateInput'), 0)) || buffer?.sampleRate || 44100;
     const channels = Math.round(readNumber($('audioChannelsInput'), 0)) || buffer?.numberOfChannels || 2;
@@ -195,10 +292,11 @@
   function estimateOutputBytes(buffer) {
     if (!buffer) return null;
     const { sampleRate, channels, format, bitrate } = getTargetSpec(buffer);
+    const range = getTrimRange(buffer, false);
     if (format === 'wav') {
-      return 44 + Math.ceil(buffer.duration * sampleRate) * channels * 2;
+      return 44 + Math.ceil(range.duration * sampleRate) * channels * 2;
     }
-    return Math.ceil((buffer.duration * bitrate * 1000) / 8);
+    return Math.ceil((range.duration * bitrate * 1000) / 8);
   }
 
   function updateEstimate() {
@@ -210,6 +308,7 @@
     }
 
     const { sampleRate, channels, format, bitrate } = getTargetSpec(lastDecoded);
+    const range = getTrimRange(lastDecoded, false);
     const estimatedBytes = estimateOutputBytes(lastDecoded);
     const ext = outputExtension(format);
     const isCompressed = format !== 'wav';
@@ -219,6 +318,8 @@
 
     estimate.textContent = [
       '출력 예상 정보',
+      `선택 구간: ${formatTime(range.start)}초 ~ ${formatTime(range.end)}초`,
+      `출력 길이: ${formatTime(range.duration)}초 / 원본 ${formatTime(range.totalDuration)}초`,
       `예상 포맷: ${outputFormatLabel(format)}`,
       `예상 확장자: .${ext}`,
       `예상 샘플레이트: ${sampleRate} Hz`,
@@ -233,6 +334,7 @@
     const info = $('audioInfo');
     if (!info) return;
     const sourceBitrate = buffer.duration > 0 ? (file.size * 8 / buffer.duration / 1000) : 0;
+    syncTrimInputs(buffer);
     info.textContent = [
       '입력 정보',
       `파일명: ${file.name}`,
@@ -253,6 +355,7 @@
     const bitrate = rendered.duration > 0 ? (blob.size * 8 / rendered.duration / 1000) : 0;
     const sourceSize = file?.size || 0;
     const ratio = sourceSize > 0 ? (blob.size / sourceSize) * 100 : 0;
+    const range = lastDecoded ? getTrimRange(lastDecoded, false) : { start: 0, end: rendered.duration, duration: rendered.duration };
     outputInfo.textContent = [
       '출력 결과 정보',
       `파일명: ${(file?.name || 'converted').replace(/\.[^.]+$/, '')}.${ext}`,
@@ -262,21 +365,23 @@
       `출력 포맷: ${outputFormatLabel(format)}`,
       `출력 샘플레이트: ${rendered.sampleRate} Hz`,
       `출력 채널: ${rendered.numberOfChannels}`,
-      `길이: ${rendered.duration.toFixed(2)}초`,
+      `선택 구간: ${formatTime(range.start)}초 ~ ${formatTime(range.end)}초`,
+      `출력 길이: ${rendered.duration.toFixed(2)}초`,
     ].join('\n');
   }
 
   async function renderBuffer(sourceBuffer) {
     const requestedSampleRate = Math.round(readNumber($('audioSampleRateInput'), 0));
     const requestedChannels = Math.round(readNumber($('audioChannelsInput'), 0));
+    const trim = getTrimRange(sourceBuffer, true);
     const sampleRate = requestedSampleRate || sourceBuffer.sampleRate;
     const channels = requestedChannels || sourceBuffer.numberOfChannels;
-    const length = Math.max(1, Math.ceil(sourceBuffer.duration * sampleRate));
+    const length = Math.max(1, Math.ceil(trim.duration * sampleRate));
     const offline = new OfflineAudioContext(channels, length, sampleRate);
     const source = offline.createBufferSource();
     source.buffer = sourceBuffer;
     source.connect(offline.destination);
-    source.start(0);
+    source.start(0, trim.start, trim.duration);
     return offline.startRendering();
   }
 
@@ -405,9 +510,10 @@
       setStatus('오디오 디코딩 중...');
       const decoded = await decodeFile(file);
       updateInfo(file, decoded);
+      getTrimRange(decoded, true);
       progress.value = 0.15;
 
-      setStatus('샘플레이트/채널 변환 중...');
+      setStatus('선택 구간 렌더링 중...');
       const rendered = await renderBuffer(decoded);
       progress.value = 0.35;
 
@@ -466,6 +572,18 @@
     $('audioBitrateInput')?.addEventListener('input', updateEstimate);
     $('audioSampleRateInput')?.addEventListener('change', updateEstimate);
     $('audioChannelsInput')?.addEventListener('change', updateEstimate);
+    $('audioTrimStartInput')?.addEventListener('input', updateEstimate);
+    $('audioTrimEndInput')?.addEventListener('input', updateEstimate);
+    $('audioTrimFullButton')?.addEventListener('click', setFullTrim);
+    $('audioTrimUseCurrentStartButton')?.addEventListener('click', () => useCurrentTimeForTrim('start'));
+    $('audioTrimUseCurrentEndButton')?.addEventListener('click', () => useCurrentTimeForTrim('end'));
+    $('audioTrimPreviewButton')?.addEventListener('click', () => {
+      try {
+        playTrimPreview();
+      } catch (error) {
+        setStatus(`선택 구간 재생 실패: ${error.message}`);
+      }
+    });
   }
 
   addNav();
