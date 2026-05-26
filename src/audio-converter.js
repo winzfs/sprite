@@ -1,0 +1,349 @@
+(() => {
+  const VIEW_KEY = 'audioConverter';
+
+  const recorderFormats = [
+    { value: 'audio/webm;codecs=opus', label: 'WebM / Opus' },
+    { value: 'audio/ogg;codecs=opus', label: 'Ogg / Opus' },
+    { value: 'audio/webm', label: 'WebM' },
+    { value: 'audio/ogg', label: 'Ogg' },
+  ];
+
+  const $ = (id) => document.getElementById(id);
+
+  function setStatus(message) {
+    const status = $('audioStatus');
+    if (status) status.textContent = message;
+  }
+
+  function readNumber(input, fallback) {
+    const value = Number.parseFloat(input?.value);
+    return Number.isFinite(value) ? value : fallback;
+  }
+
+  function closeMenu() {
+    document.body.classList.remove('menu-open');
+    $('menuToggleButton')?.setAttribute('aria-expanded', 'false');
+  }
+
+  function showView(key) {
+    document.querySelectorAll('.nav-btn').forEach((button) => {
+      button.classList.toggle('active', button.dataset.view === key);
+    });
+    document.querySelectorAll('.tool-view').forEach((view) => {
+      view.classList.toggle('active', view.id === `view-${key}`);
+    });
+    closeMenu();
+  }
+
+  function addNav() {
+    if (document.querySelector(`[data-view="${VIEW_KEY}"]`)) return;
+    const mediaGroup = Array.from(document.querySelectorAll('.nav-group')).find((group) => group.querySelector('[data-view="videoToGif"]'));
+    const items = mediaGroup?.querySelector('.nav-group-items');
+    if (!items) return;
+
+    const button = document.createElement('button');
+    button.className = 'nav-btn';
+    button.type = 'button';
+    button.dataset.view = VIEW_KEY;
+    button.textContent = '음원 변환';
+    button.addEventListener('click', () => showView(VIEW_KEY));
+
+    const help = items.querySelector('.nav-help');
+    if (help) items.insertBefore(button, help);
+    else items.append(button);
+  }
+
+  function addView() {
+    if ($(`view-${VIEW_KEY}`)) return;
+    const main = document.querySelector('.main-content');
+    if (!main) return;
+
+    const section = document.createElement('section');
+    section.id = `view-${VIEW_KEY}`;
+    section.className = 'tool-view';
+    section.innerHTML = `
+      <header class="app-header">
+        <h1>음원 변환</h1>
+        <p>MP3, WAV 등 브라우저가 디코딩할 수 있는 오디오를 로컬에서 변환합니다. 서버 업로드는 없습니다.</p>
+      </header>
+      <main class="converter-layout">
+        <section class="panel">
+          <div class="panel-title">변환 설정</div>
+          <div class="panel-body controls">
+            <label>오디오 파일 <input id="audioInput" type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,audio/mp4,audio/aac,audio/flac,audio/*,.mp3,.wav,.ogg,.webm,.m4a,.aac,.flac"></label>
+            <div class="grid-2">
+              <label>출력 포맷
+                <select id="audioFormatInput">
+                  <option value="wav">WAV / PCM 16-bit</option>
+                </select>
+              </label>
+              <label>비트전송률(kbps) <input id="audioBitrateInput" type="number" min="32" max="512" step="16" value="128"></label>
+            </div>
+            <div class="grid-2">
+              <label>샘플레이트
+                <select id="audioSampleRateInput">
+                  <option value="0">원본 유지</option>
+                  <option value="44100">44.1 kHz</option>
+                  <option value="48000">48 kHz</option>
+                  <option value="32000">32 kHz</option>
+                  <option value="22050">22.05 kHz</option>
+                </select>
+              </label>
+              <label>채널
+                <select id="audioChannelsInput">
+                  <option value="0">원본 유지</option>
+                  <option value="1">모노</option>
+                  <option value="2">스테레오</option>
+                </select>
+              </label>
+            </div>
+            <div class="button-row">
+              <button id="audioReadButton" type="button">정보 읽기</button>
+              <button id="audioConvertButton" type="button" class="primary">변환</button>
+              <a id="audioDownloadLink" class="download-link hidden" download="converted.wav">다운로드</a>
+            </div>
+            <progress id="audioProgress" value="0" max="1"></progress>
+            <div id="audioStatus" class="status">지원 입력: MP3, WAV, Ogg, WebM, M4A/AAC, FLAC 등. 실제 지원은 브라우저 코덱에 따라 달라집니다.</div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-title">미리보기 / 정보</div>
+          <div class="panel-body controls">
+            <audio id="audioPreview" class="audio-preview" controls></audio>
+            <pre id="audioInfo" class="media-info">파일을 선택하세요.</pre>
+          </div>
+        </section>
+      </main>
+    `;
+    main.append(section);
+  }
+
+  function populateFormats() {
+    const select = $('audioFormatInput');
+    if (!select) return;
+    recorderFormats.forEach((format) => {
+      if (!window.MediaRecorder?.isTypeSupported?.(format.value)) return;
+      const option = document.createElement('option');
+      option.value = format.value;
+      option.textContent = format.label;
+      select.append(option);
+    });
+  }
+
+  async function decodeFile(file) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error('이 브라우저는 Web Audio API를 지원하지 않습니다.');
+    const context = new AudioContextClass();
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      return await context.decodeAudioData(arrayBuffer);
+    } finally {
+      await context.close().catch(() => {});
+    }
+  }
+
+  function updateInfo(file, buffer) {
+    const info = $('audioInfo');
+    if (!info) return;
+    info.textContent = [
+      `파일명: ${file.name}`,
+      `크기: ${(file.size / 1024 / 1024).toFixed(2)} MB`,
+      `길이: ${buffer.duration.toFixed(2)}초`,
+      `샘플레이트: ${buffer.sampleRate} Hz`,
+      `채널: ${buffer.numberOfChannels}`,
+    ].join('\n');
+  }
+
+  async function renderBuffer(sourceBuffer) {
+    const requestedSampleRate = Math.round(readNumber($('audioSampleRateInput'), 0));
+    const requestedChannels = Math.round(readNumber($('audioChannelsInput'), 0));
+    const sampleRate = requestedSampleRate || sourceBuffer.sampleRate;
+    const channels = requestedChannels || sourceBuffer.numberOfChannels;
+    const length = Math.max(1, Math.ceil(sourceBuffer.duration * sampleRate));
+    const offline = new OfflineAudioContext(channels, length, sampleRate);
+    const source = offline.createBufferSource();
+    source.buffer = sourceBuffer;
+    source.connect(offline.destination);
+    source.start(0);
+    return offline.startRendering();
+  }
+
+  function writeText(view, offset, text) {
+    for (let i = 0; i < text.length; i += 1) view.setUint8(offset + i, text.charCodeAt(i));
+  }
+
+  function encodeWav(buffer) {
+    const channels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const samples = buffer.length;
+    const bytesPerSample = 2;
+    const blockAlign = channels * bytesPerSample;
+    const dataSize = samples * blockAlign;
+    const output = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(output);
+
+    writeText(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeText(view, 8, 'WAVE');
+    writeText(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, 16, true);
+    writeText(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    const data = [];
+    for (let channel = 0; channel < channels; channel += 1) data.push(buffer.getChannelData(channel));
+    let offset = 44;
+    for (let i = 0; i < samples; i += 1) {
+      for (let channel = 0; channel < channels; channel += 1) {
+        const sample = Math.max(-1, Math.min(1, data[channel][i] || 0));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
+    }
+    return new Blob([output], { type: 'audio/wav' });
+  }
+
+  function recordCompressed(buffer, mimeType, bitrateKbps) {
+    return new Promise(async (resolve, reject) => {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const context = new AudioContextClass({ sampleRate: buffer.sampleRate });
+      const source = context.createBufferSource();
+      const destination = context.createMediaStreamDestination();
+      const chunks = [];
+      let recorder;
+
+      try {
+        recorder = new MediaRecorder(destination.stream, {
+          mimeType,
+          audioBitsPerSecond: bitrateKbps * 1000,
+        });
+      } catch (error) {
+        await context.close().catch(() => {});
+        reject(error);
+        return;
+      }
+
+      recorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) chunks.push(event.data);
+      });
+      recorder.addEventListener('stop', async () => {
+        destination.stream.getTracks().forEach((track) => track.stop());
+        await context.close().catch(() => {});
+        resolve(new Blob(chunks, { type: mimeType }));
+      }, { once: true });
+
+      source.buffer = buffer;
+      source.connect(destination);
+      source.addEventListener('ended', () => setTimeout(() => recorder.state !== 'inactive' && recorder.stop(), 120), { once: true });
+      recorder.start();
+      source.start(0);
+      await context.resume();
+    });
+  }
+
+  function setDownload(blob, fileName) {
+    const link = $('audioDownloadLink');
+    if (!link) return;
+    if (link.dataset.objectUrl) URL.revokeObjectURL(link.dataset.objectUrl);
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = fileName;
+    link.dataset.objectUrl = url;
+    link.classList.remove('hidden');
+  }
+
+  async function readInfo() {
+    const input = $('audioInput');
+    const file = input?.files?.[0];
+    if (!file) {
+      setStatus('먼저 오디오 파일을 선택하세요.');
+      return;
+    }
+    try {
+      setStatus('오디오 정보를 읽는 중...');
+      const buffer = await decodeFile(file);
+      updateInfo(file, buffer);
+      setStatus('오디오 정보 읽기 완료');
+    } catch (error) {
+      setStatus(`오디오 정보 읽기 실패: ${error.message}`);
+    }
+  }
+
+  async function convert() {
+    const input = $('audioInput');
+    const file = input?.files?.[0];
+    const convertButton = $('audioConvertButton');
+    const progress = $('audioProgress');
+    if (!file) {
+      setStatus('먼저 오디오 파일을 선택하세요.');
+      return;
+    }
+
+    try {
+      convertButton.disabled = true;
+      progress.value = 0;
+      $('audioDownloadLink')?.classList.add('hidden');
+      setStatus('오디오 디코딩 중...');
+      const decoded = await decodeFile(file);
+      updateInfo(file, decoded);
+      progress.value = 0.15;
+
+      setStatus('샘플레이트/채널 변환 중...');
+      const rendered = await renderBuffer(decoded);
+      progress.value = 0.35;
+
+      const format = $('audioFormatInput').value;
+      let blob;
+      let ext;
+      if (format === 'wav') {
+        setStatus('WAV 생성 중...');
+        blob = encodeWav(rendered);
+        ext = 'wav';
+      } else {
+        if (!window.MediaRecorder?.isTypeSupported?.(format)) throw new Error(`${format} 출력은 이 브라우저에서 지원하지 않습니다.`);
+        const bitrate = Math.max(32, Math.min(512, Math.round(readNumber($('audioBitrateInput'), 128))));
+        setStatus(`압축 오디오 생성 중... ${bitrate}kbps`);
+        blob = await recordCompressed(rendered, format, bitrate);
+        ext = format.includes('ogg') ? 'ogg' : 'webm';
+      }
+
+      progress.value = 1;
+      const baseName = file.name.replace(/\.[^.]+$/, '') || 'converted';
+      setDownload(blob, `${baseName}.${ext}`);
+      setStatus(`변환 완료: ${(blob.size / 1024 / 1024).toFixed(2)} MB`);
+    } catch (error) {
+      setStatus(`오디오 변환 실패: ${error.message}`);
+    } finally {
+      convertButton.disabled = false;
+    }
+  }
+
+  function bind() {
+    const input = $('audioInput');
+    if (!input || input.dataset.bound === 'true') return;
+    input.dataset.bound = 'true';
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const preview = $('audioPreview');
+      if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+      const url = URL.createObjectURL(file);
+      preview.src = url;
+      preview.dataset.objectUrl = url;
+      readInfo();
+    });
+    $('audioReadButton')?.addEventListener('click', readInfo);
+    $('audioConvertButton')?.addEventListener('click', convert);
+  }
+
+  addNav();
+  addView();
+  populateFormats();
+  bind();
+})();
