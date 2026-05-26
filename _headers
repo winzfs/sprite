@@ -1,0 +1,14 @@
+/
+  Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-store
+
+/*.html
+  Cache-Control: no-store
+
+/*.css
+  Cache-Control: no-cache
+
+/src/*
+  Cache-Control: no-cache
