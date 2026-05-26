@@ -1,5 +1,6 @@
 (() => {
   const VIEW_KEY = 'audioConverter';
+  const LOCAL_MP3_FORMAT = 'mp3-lame';
   let lastDecoded = null;
   let lastFile = null;
 
@@ -116,7 +117,7 @@
               <a id="audioDownloadLink" class="download-link hidden" download="converted.wav">다운로드</a>
             </div>
             <progress id="audioProgress" value="0" max="1"></progress>
-            <div id="audioStatus" class="status">지원 입력: MP3, WAV, Ogg, WebM, M4A/AAC, FLAC 등. 출력 포맷은 현재 브라우저가 지원하는 항목만 표시됩니다.</div>
+            <div id="audioStatus" class="status">지원 입력: MP3, WAV, Ogg, WebM, M4A/AAC, FLAC 등. MP3는 저장소 내 로컬 인코더를 사용합니다.</div>
           </div>
         </section>
         <section class="panel">
@@ -132,15 +133,25 @@
     main.append(section);
   }
 
+  function addOption(select, value, label) {
+    if (!select || select.querySelector(`option[value="${value}"]`)) return;
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    select.append(option);
+  }
+
   function populateFormats() {
     const select = $('audioFormatInput');
     if (!select) return;
+
+    if (window.SpriteMp3Encoder?.isAvailable?.()) {
+      addOption(select, LOCAL_MP3_FORMAT, 'MP3 / LAME 로컬');
+    }
+
     recorderFormats.forEach((format) => {
       if (!window.MediaRecorder?.isTypeSupported?.(format.value)) return;
-      const option = document.createElement('option');
-      option.value = format.value;
-      option.textContent = format.label;
-      select.append(option);
+      addOption(select, format.value, format.label);
     });
   }
 
@@ -160,12 +171,14 @@
     const sampleRate = Math.round(readNumber($('audioSampleRateInput'), 0)) || buffer?.sampleRate || 44100;
     const channels = Math.round(readNumber($('audioChannelsInput'), 0)) || buffer?.numberOfChannels || 2;
     const format = $('audioFormatInput')?.value || 'wav';
-    const bitrate = Math.max(32, Math.min(512, Math.round(readNumber($('audioBitrateInput'), 128))));
+    const maxBitrate = format === LOCAL_MP3_FORMAT ? 320 : 512;
+    const bitrate = Math.max(32, Math.min(maxBitrate, Math.round(readNumber($('audioBitrateInput'), 128))));
     return { sampleRate, channels, format, bitrate };
   }
 
   function outputExtension(format) {
     if (format === 'wav') return 'wav';
+    if (format === LOCAL_MP3_FORMAT || format.includes('mpeg') || format.includes('mp3')) return 'mp3';
     if (format.includes('ogg')) return 'ogg';
     if (format.includes('mp4')) return 'm4a';
     if (format.includes('aac')) return 'aac';
@@ -174,6 +187,7 @@
 
   function outputFormatLabel(format) {
     if (format === 'wav') return 'WAV / PCM 16-bit';
+    if (format === LOCAL_MP3_FORMAT) return 'MP3 / LAME 로컬';
     const match = recorderFormats.find((item) => item.value === format);
     return match ? match.label : format;
   }
@@ -199,6 +213,9 @@
     const estimatedBytes = estimateOutputBytes(lastDecoded);
     const ext = outputExtension(format);
     const isCompressed = format !== 'wav';
+    const note = format === LOCAL_MP3_FORMAT
+      ? '참고: MP3는 저장소 내 로컬 LAME 인코더로 생성합니다.'
+      : (isCompressed ? '참고: 압축 포맷 실제 용량은 브라우저 인코더에 따라 달라질 수 있습니다.' : '참고: WAV는 무압축이라 예상 용량과 실제 용량이 거의 같습니다.');
 
     estimate.textContent = [
       '출력 예상 정보',
@@ -208,7 +225,7 @@
       `예상 채널: ${channels}`,
       isCompressed ? `목표 비트전송률: ${bitrate} kbps` : '비트전송률: WAV PCM은 설정값을 사용하지 않음',
       `예상 용량: 약 ${formatBytes(estimatedBytes)}`,
-      isCompressed ? '참고: 압축 포맷 실제 용량은 브라우저 인코더에 따라 달라질 수 있습니다.' : '참고: WAV는 무압축이라 예상 용량과 실제 용량이 거의 같습니다.',
+      note,
     ].join('\n');
   }
 
@@ -395,15 +412,22 @@
       progress.value = 0.35;
 
       const format = $('audioFormatInput').value;
+      const bitrate = Math.max(32, Math.min(format === LOCAL_MP3_FORMAT ? 320 : 512, Math.round(readNumber($('audioBitrateInput'), 128))));
       let blob;
       let ext;
       if (format === 'wav') {
         setStatus('WAV 생성 중...');
         blob = encodeWav(rendered);
         ext = 'wav';
+      } else if (format === LOCAL_MP3_FORMAT) {
+        if (!window.SpriteMp3Encoder?.isAvailable?.()) throw new Error('로컬 MP3 인코더가 로드되지 않았습니다.');
+        setStatus(`MP3 생성 중... ${bitrate}kbps`);
+        blob = await window.SpriteMp3Encoder.encode(rendered, bitrate, (ratio) => {
+          progress.value = 0.35 + Math.min(0.6, ratio * 0.6);
+        });
+        ext = 'mp3';
       } else {
         if (!window.MediaRecorder?.isTypeSupported?.(format)) throw new Error(`${format} 출력은 이 브라우저에서 지원하지 않습니다.`);
-        const bitrate = Math.max(32, Math.min(512, Math.round(readNumber($('audioBitrateInput'), 128))));
         setStatus(`압축 오디오 생성 중... ${bitrate}kbps`);
         blob = await recordCompressed(rendered, format, bitrate);
         ext = outputExtension(format);
