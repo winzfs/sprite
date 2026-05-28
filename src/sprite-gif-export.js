@@ -24,39 +24,20 @@
   }
 
   function createGifFrameContext(frame, cellWidth, cellHeight) {
-    const rect = getSourceRect(frame);
     const canvas = document.createElement('canvas');
     canvas.width = cellWidth;
     canvas.height = cellHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.imageSmoothingEnabled = false;
 
-    ctx.globalCompositeOperation = 'copy';
     ctx.clearRect(0, 0, cellWidth, cellHeight);
-    ctx.globalCompositeOperation = 'source-over';
-
     if (!ui.transparentBg?.checked) {
       ctx.fillStyle = ui.exportBg?.value || '#d9d9d9';
       ctx.fillRect(0, 0, cellWidth, cellHeight);
     }
 
-    const dx = Math.floor((cellWidth - rect.w) / 2);
-    const dy = Math.floor((cellHeight - rect.h) / 2);
-    drawFrameImage(ctx, frame, dx, dy, 1);
+    drawFrameImage(ctx, frame, 0, 0, 1);
     return ctx;
-  }
-
-  async function patchGifDisposal(blob, useTransparentBackground) {
-    if (!useTransparentBackground) return blob;
-
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    for (let i = 0; i < bytes.length - 7; i += 1) {
-      if (bytes[i] === 0x21 && bytes[i + 1] === 0xf9 && bytes[i + 2] === 0x04) {
-        bytes[i + 3] = 0x09;
-        bytes[i + 6] = 0x00;
-      }
-    }
-    return new Blob([bytes], { type: 'image/gif' });
   }
 
   function downloadBlob(blob, filename) {
@@ -97,14 +78,9 @@
       gif.addFrame(ctx, { delay, dispose: transparent ? 2 : 1 });
     });
 
-    gif.on('finished', async (blob) => {
-      try {
-        const fixedBlob = await patchGifDisposal(blob, transparent);
-        downloadBlob(fixedBlob, `sprite-animation-${frames.length}f-${fps}fps-${width}x${height}.gif`);
-        setStatus(`GIF 내보내기 완료: ${frames.length}프레임 / ${fps}FPS / ${width}x${height} / ${(fixedBlob.size / 1024).toFixed(1)}KB`);
-      } catch (error) {
-        setStatus(`GIF 후처리 실패: ${error?.message || error}`);
-      }
+    gif.on('finished', (blob) => {
+      downloadBlob(blob, `sprite-animation-${frames.length}f-${fps}fps-${width}x${height}.gif`);
+      setStatus(`GIF 내보내기 완료: ${frames.length}프레임 / ${fps}FPS / ${width}x${height} / ${(blob.size / 1024).toFixed(1)}KB`);
     });
 
     gif.on('abort', (error) => {
@@ -125,7 +101,7 @@
     button.type = 'button';
     button.className = 'primary';
     button.textContent = 'GIF 내보내기';
-    button.title = '출력 순서 기준으로 보정된 프레임을 1장씩 애니메이션 GIF로 내보냅니다. FPS 입력값을 사용합니다.';
+    button.title = 'PNG 출력과 같은 기준으로 보정된 프레임을 GIF로 내보냅니다. FPS 입력값을 사용합니다.';
     pngButton.after(button);
   }
 
