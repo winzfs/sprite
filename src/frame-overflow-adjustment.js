@@ -2,24 +2,13 @@
   function unrestrictedSourceRect(frame) {
     const shift = getShift(frame.id);
     const size = getBoxSize(frame);
-    let sx = frame.sx + shift.x;
-    let sy = frame.sy + shift.y;
-    let w = size.w;
-    let h = size.h;
-
-    const imageWidth = state.image?.naturalWidth || 0;
-    const imageHeight = state.image?.naturalHeight || 0;
-
-    if (sx < 0) w += Math.abs(sx);
-    if (sy < 0) h += Math.abs(sy);
-    if (sx + size.w > imageWidth) w += sx + size.w - imageWidth;
-    if (sy + size.h > imageHeight) h += sy + size.h - imageHeight;
-
+    const sx = frame.sx + shift.x;
+    const sy = frame.sy + shift.y;
     return {
       sx,
       sy,
-      w: Math.max(1, Math.round(w)),
-      h: Math.max(1, Math.round(h)),
+      w: size.w,
+      h: size.h,
       shiftX: sx - frame.sx,
       shiftY: sy - frame.sy,
     };
@@ -66,7 +55,7 @@
     drawSource();
     drawPreview(first);
     updateInfoDisplays();
-    setStatus(`${ids.length}개 위치 보정: 원본 밖 투명 여백까지 프레임 크기 확장`);
+    setStatus(`${ids.length}개 위치 보정: 프레임 박스 크기는 유지`);
   };
 
   updateInfoDisplays();
