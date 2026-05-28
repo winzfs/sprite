@@ -20,6 +20,7 @@
     return {
       width: Math.max(1, ...rects.map((rect) => rect.w)),
       height: Math.max(1, ...rects.map((rect) => rect.h)),
+      rects,
     };
   }
 
@@ -29,13 +30,7 @@
     canvas.height = cellHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.imageSmoothingEnabled = false;
-
     ctx.clearRect(0, 0, cellWidth, cellHeight);
-    if (!ui.transparentBg?.checked) {
-      ctx.fillStyle = ui.exportBg?.value || '#d9d9d9';
-      ctx.fillRect(0, 0, cellWidth, cellHeight);
-    }
-
     drawFrameImage(ctx, frame, 0, 0, 1);
     return ctx;
   }
@@ -57,30 +52,31 @@
     const frames = getOutputFrames();
     if (!frames.length) return setStatus('GIF로 내보낼 프레임이 없습니다.');
 
-    const { width, height } = getGifCellSize(frames);
+    const { width, height, rects } = getGifCellSize(frames);
     const fps = getGifFps();
     const delay = Math.max(20, Math.round(1000 / fps));
-    const transparent = !!ui.transparentBg?.checked;
+    const transparent = true;
+    const firstRect = rects[0];
 
     const gif = new GIF({
       width,
       height,
       repeat: 0,
-      quality: 5,
-      transparent,
-      dispose: transparent ? 2 : 1,
+      quality: 1,
+      transparent: true,
+      dispose: 2,
     });
 
-    setStatus(`GIF 생성 준비 중... ${frames.length}프레임 / ${fps}FPS / ${width}x${height}`);
+    setStatus(`GIF 생성 준비 중... 셀 ${width}x${height}, 첫 프레임 ${firstRect.w}x${firstRect.h}, ${frames.length}프레임 / ${fps}FPS`);
 
     frames.forEach((frame) => {
       const ctx = createGifFrameContext(frame, width, height);
-      gif.addFrame(ctx, { delay, dispose: transparent ? 2 : 1 });
+      gif.addFrame(ctx, { delay, dispose: 2 });
     });
 
     gif.on('finished', (blob) => {
       downloadBlob(blob, `sprite-animation-${frames.length}f-${fps}fps-${width}x${height}.gif`);
-      setStatus(`GIF 내보내기 완료: ${frames.length}프레임 / ${fps}FPS / ${width}x${height} / ${(blob.size / 1024).toFixed(1)}KB`);
+      setStatus(`GIF 내보내기 완료: 셀 ${width}x${height}, ${frames.length}프레임 / ${fps}FPS / ${(blob.size / 1024).toFixed(1)}KB`);
     });
 
     gif.on('abort', (error) => {
