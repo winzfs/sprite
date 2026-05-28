@@ -15,21 +15,31 @@
     return state.outputFrameIds.map((id) => getFrame(id)).filter(Boolean);
   }
 
-  function createGifFrameContext(frame, width, height) {
+  function getGifCellSize(frames) {
+    const rects = frames.map((frame) => getSourceRect(frame));
+    return {
+      width: Math.max(1, ...rects.map((rect) => rect.w)),
+      height: Math.max(1, ...rects.map((rect) => rect.h)),
+    };
+  }
+
+  function createGifFrameContext(frame, cellWidth, cellHeight) {
+    const rect = getSourceRect(frame);
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = cellWidth;
+    canvas.height = cellHeight;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.imageSmoothingEnabled = false;
 
+    ctx.clearRect(0, 0, cellWidth, cellHeight);
     if (!ui.transparentBg?.checked) {
       ctx.fillStyle = ui.exportBg?.value || '#d9d9d9';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    } else {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, cellWidth, cellHeight);
     }
 
-    drawFrameImage(ctx, frame, 0, 0, 1);
+    const dx = Math.floor((cellWidth - rect.w) / 2);
+    const dy = Math.floor((cellHeight - rect.h) / 2);
+    drawFrameImage(ctx, frame, dx, dy, 1);
     return ctx;
   }
 
@@ -50,24 +60,25 @@
     const frames = getOutputFrames();
     if (!frames.length) return setStatus('GIF로 내보낼 프레임이 없습니다.');
 
-    const rects = frames.map((frame) => getSourceRect(frame));
-    const width = Math.max(...rects.map((rect) => rect.w));
-    const height = Math.max(...rects.map((rect) => rect.h));
+    const { width, height } = getGifCellSize(frames);
     const fps = getGifFps();
     const delay = Math.max(20, Math.round(1000 / fps));
+    const transparent = !!ui.transparentBg?.checked;
 
     const gif = new GIF({
       width,
       height,
       repeat: 0,
       quality: 5,
+      transparent,
+      dispose: transparent ? 2 : 1,
     });
 
     setStatus(`GIF 생성 준비 중... ${frames.length}프레임 / ${fps}FPS / ${width}x${height}`);
 
     frames.forEach((frame) => {
       const ctx = createGifFrameContext(frame, width, height);
-      gif.addFrame(ctx, { delay });
+      gif.addFrame(ctx, { delay, dispose: transparent ? 2 : 1 });
     });
 
     gif.on('finished', (blob) => {
@@ -93,7 +104,7 @@
     button.type = 'button';
     button.className = 'primary';
     button.textContent = 'GIF 내보내기';
-    button.title = '출력 순서 기준으로 애니메이션 GIF를 내보냅니다. FPS 입력값을 사용합니다.';
+    button.title = '출력 순서 기준으로 보정된 프레임을 1장씩 애니메이션 GIF로 내보냅니다. FPS 입력값을 사용합니다.';
     pngButton.after(button);
   }
 
