@@ -1,5 +1,7 @@
 (() => {
   const BUTTON_ID = 'exportGifButton';
+  const ENCODER_SRC = 'src/sprite-gif-encoder.js?v=1';
+  let encoderLoadPromise = null;
 
   function getNumber(input, fallback) {
     const value = Number.parseInt(input?.value, 10);
@@ -24,6 +26,24 @@
     };
   }
 
+  function loadEncoder() {
+    if (window.SpriteGifEncoder?.encode) return Promise.resolve();
+    if (encoderLoadPromise) return encoderLoadPromise;
+
+    encoderLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = ENCODER_SRC;
+      script.defer = true;
+      script.addEventListener('load', () => {
+        if (window.SpriteGifEncoder?.encode) resolve();
+        else reject(new Error('스프라이트 GIF 인코더 초기화 실패'));
+      }, { once: true });
+      script.addEventListener('error', () => reject(new Error('스프라이트 GIF 인코더 파일 로드 실패')), { once: true });
+      document.head.append(script);
+    });
+    return encoderLoadPromise;
+  }
+
   function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -36,8 +56,6 @@
   }
 
   async function exportGif() {
-    if (!window.SpriteGifEncoder?.encode) return setStatus('스프라이트 GIF 인코더가 로드되지 않았습니다.');
-
     const frames = getOutputFrames();
     if (!frames.length) return setStatus('GIF로 내보낼 프레임이 없습니다.');
 
@@ -47,6 +65,8 @@
     const firstRect = rects[0];
 
     try {
+      setStatus('스프라이트 GIF 인코더 로드 중...');
+      await loadEncoder();
       setStatus(`스프라이트 GIF 인코딩 중... 셀 ${width}x${height}, 첫 프레임 ${firstRect.w}x${firstRect.h}, ${frames.length}프레임 / ${fps}FPS`);
       const blob = await window.SpriteGifEncoder.encode({ frames, width, height, fps, transparent });
       downloadBlob(blob, `sprite-animation-${frames.length}f-${fps}fps-${width}x${height}.gif`);
