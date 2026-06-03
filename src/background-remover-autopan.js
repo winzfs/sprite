@@ -3,22 +3,13 @@
   const MIN_ZOOM = 1;
   const MAX_ZOOM = 32;
   let currentZoom = 1;
-  let hasInitialAutoPanned = false;
 
-  function getElement(id) {
-    return document.getElementById(id);
-  }
-
-  function pairList() {
-    return [
-      { wrap: getElement('bgRemoveOriginalWrap'), canvas: getElement('bgRemoveOriginalCanvas') },
-      { wrap: getElement('bgRemoveResultWrap'), canvas: getElement('bgRemoveResultCanvas') },
-    ];
-  }
-
-  function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-  }
+  const getElement = (id) => document.getElementById(id);
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const pairList = () => [
+    { wrap: getElement('bgRemoveOriginalWrap'), canvas: getElement('bgRemoveOriginalCanvas') },
+    { wrap: getElement('bgRemoveResultWrap'), canvas: getElement('bgRemoveResultCanvas') },
+  ];
 
   function ensureZoomLayer(wrap, canvas) {
     if (!wrap || !canvas) return null;
@@ -28,8 +19,6 @@
       layer.dataset.bgZoomLayer = 'true';
       layer.style.position = 'relative';
       layer.style.display = 'block';
-      layer.style.width = `${canvas.width || 1}px`;
-      layer.style.height = `${canvas.height || 1}px`;
       layer.style.minWidth = '0';
       layer.style.minHeight = '0';
       layer.style.transform = 'translateZ(0)';
@@ -81,20 +70,19 @@
       wrap.style.overscrollBehavior = 'contain';
       wrap.style.cursor = 'grab';
 
-      if (canvas) {
-        const layer = ensureZoomLayer(wrap, canvas);
-        canvas.style.display = 'block';
-        canvas.style.maxWidth = 'none';
-        canvas.style.width = `${canvas.width || 1}px`;
-        canvas.style.height = `${canvas.height || 1}px`;
-        canvas.style.transformOrigin = '0 0';
-        canvas.style.imageRendering = currentZoom > 1 ? 'pixelated' : 'auto';
-        canvas.style.touchAction = 'none';
-        if (layer) {
-          layer.style.width = `${(canvas.width || 1) * currentZoom}px`;
-          layer.style.height = `${(canvas.height || 1) * currentZoom}px`;
-        }
-        canvas.style.transform = `scale(${currentZoom})`;
+      if (!canvas) return;
+      const layer = ensureZoomLayer(wrap, canvas);
+      canvas.style.display = 'block';
+      canvas.style.maxWidth = 'none';
+      canvas.style.width = `${canvas.width || 1}px`;
+      canvas.style.height = `${canvas.height || 1}px`;
+      canvas.style.transformOrigin = '0 0';
+      canvas.style.transform = `scale(${currentZoom})`;
+      canvas.style.imageRendering = currentZoom > 1 ? 'pixelated' : 'auto';
+      canvas.style.touchAction = 'none';
+      if (layer) {
+        layer.style.width = `${(canvas.width || 1) * currentZoom}px`;
+        layer.style.height = `${(canvas.height || 1) * currentZoom}px`;
       }
     });
   }
@@ -114,19 +102,16 @@
   function captureScrollRatios() {
     return pairList().map(({ wrap }) => {
       if (!wrap) return null;
-      const maxLeft = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
-      const maxTop = Math.max(1, wrap.scrollHeight - wrap.clientHeight);
       return {
         wrap,
-        leftRatio: wrap.scrollLeft / maxLeft,
-        topRatio: wrap.scrollTop / maxTop,
+        leftRatio: wrap.scrollLeft / Math.max(1, wrap.scrollWidth - wrap.clientWidth),
+        topRatio: wrap.scrollTop / Math.max(1, wrap.scrollHeight - wrap.clientHeight),
       };
     });
   }
 
   function restoreScrollRatios(ratios) {
-    if (!ratios) return;
-    ratios.forEach((item) => {
+    ratios?.forEach((item) => {
       if (!item?.wrap) return;
       const maxLeft = Math.max(0, item.wrap.scrollWidth - item.wrap.clientWidth);
       const maxTop = Math.max(0, item.wrap.scrollHeight - item.wrap.clientHeight);
@@ -135,22 +120,29 @@
     });
   }
 
-  function getAnchorImagePoint(wrap, anchorClient) {
+  function getLocalPoint(wrap, clientPoint) {
     const rect = wrap.getBoundingClientRect();
-    const localX = anchorClient ? anchorClient.clientX - rect.left : wrap.clientWidth / 2;
-    const localY = anchorClient ? anchorClient.clientY - rect.top : wrap.clientHeight / 2;
     return {
-      localX,
-      localY,
-      imageX: (wrap.scrollLeft + localX) / Math.max(0.001, currentZoom),
-      imageY: (wrap.scrollTop + localY) / Math.max(0.001, currentZoom),
+      localX: clientPoint ? clientPoint.clientX - rect.left : wrap.clientWidth / 2,
+      localY: clientPoint ? clientPoint.clientY - rect.top : wrap.clientHeight / 2,
     };
   }
 
-  function applyZoomToWrap(wrap, canvas, nextZoom, anchorClient) {
+  function getImagePoint(wrap, clientPoint, zoomValue = currentZoom) {
+    const point = getLocalPoint(wrap, clientPoint);
+    return {
+      ...point,
+      imageX: (wrap.scrollLeft + point.localX) / Math.max(0.001, zoomValue),
+      imageY: (wrap.scrollTop + point.localY) / Math.max(0.001, zoomValue),
+    };
+  }
+
+  function applyZoomToWrap(wrap, canvas, nextZoom, anchorSpec, sourceZoom) {
     if (!wrap || !canvas || !canvas.width || !canvas.height) return;
-    const anchor = getAnchorImagePoint(wrap, anchorClient);
     const layer = ensureZoomLayer(wrap, canvas);
+    const sourcePoint = anchorSpec && Number.isFinite(anchorSpec.imageX) && Number.isFinite(anchorSpec.imageY)
+      ? { ...getLocalPoint(wrap, anchorSpec), imageX: anchorSpec.imageX, imageY: anchorSpec.imageY }
+      : getImagePoint(wrap, anchorSpec, sourceZoom);
 
     canvas.style.width = `${canvas.width}px`;
     canvas.style.height = `${canvas.height}px`;
@@ -164,41 +156,26 @@
       layer.style.height = `${canvas.height * nextZoom}px`;
     }
 
-    wrap.scrollLeft = clamp(
-      anchor.imageX * nextZoom - anchor.localX,
-      0,
-      Math.max(0, wrap.scrollWidth - wrap.clientWidth),
-    );
-    wrap.scrollTop = clamp(
-      anchor.imageY * nextZoom - anchor.localY,
-      0,
-      Math.max(0, wrap.scrollHeight - wrap.clientHeight),
-    );
+    wrap.scrollLeft = clamp(sourcePoint.imageX * nextZoom - sourcePoint.localX, 0, Math.max(0, wrap.scrollWidth - wrap.clientWidth));
+    wrap.scrollTop = clamp(sourcePoint.imageY * nextZoom - sourcePoint.localY, 0, Math.max(0, wrap.scrollHeight - wrap.clientHeight));
   }
 
   function setZoom(zoom, anchorMapOrPoint) {
     const nextZoom = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
     const previousZoom = currentZoom;
+    pairList().forEach(({ wrap, canvas }) => {
+      const anchorSpec = anchorMapOrPoint instanceof Map ? anchorMapOrPoint.get(wrap?.id) : anchorMapOrPoint;
+      applyZoomToWrap(wrap, canvas, nextZoom, anchorSpec, previousZoom);
+    });
     currentZoom = nextZoom;
     setSliderZoomValue(nextZoom);
-
-    pairList().forEach(({ wrap, canvas }) => {
-      if (!wrap || !canvas) return;
-      const anchor = anchorMapOrPoint instanceof Map
-        ? anchorMapOrPoint.get(wrap.id)
-        : anchorMapOrPoint;
-      currentZoom = previousZoom;
-      applyZoomToWrap(wrap, canvas, nextZoom, anchor);
-      currentZoom = nextZoom;
-    });
   }
 
   function findVisibleBounds(canvas) {
     if (!canvas || !canvas.width || !canvas.height) return null;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const { width, height } = canvas;
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
+    const data = ctx.getImageData(0, 0, width, height).data;
     let minX = width;
     let minY = height;
     let maxX = -1;
@@ -206,55 +183,42 @@
 
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
-        const i = (y * width + x) * 4;
-        if (data[i + 3] <= 8) continue;
+        if (data[(y * width + x) * 4 + 3] <= 8) continue;
         minX = Math.min(minX, x);
         minY = Math.min(minY, y);
         maxX = Math.max(maxX, x);
         maxY = Math.max(maxY, y);
       }
     }
-
-    if (maxX < minX || maxY < minY) return null;
-    return { minX, minY, maxX, maxY };
+    return maxX < minX || maxY < minY ? null : { minX, minY, maxX, maxY };
   }
 
   function scrollWrapToBounds(wrap, canvas, bounds) {
     if (!wrap || !canvas || !bounds) return;
     applyViewportFixes();
-
     const left = bounds.minX * currentZoom;
     const right = (bounds.maxX + 1) * currentZoom;
     const top = bounds.minY * currentZoom;
     const bottom = (bounds.maxY + 1) * currentZoom;
     const objectWidth = Math.max(1, right - left);
     const objectHeight = Math.max(1, bottom - top);
-
-    const targetLeft = objectWidth <= wrap.clientWidth
-      ? left - Math.max(16, (wrap.clientWidth - objectWidth) / 2)
-      : left;
-    const targetTop = objectHeight <= wrap.clientHeight
-      ? top - Math.max(16, (wrap.clientHeight - objectHeight) / 2)
-      : top;
-
+    const targetLeft = objectWidth <= wrap.clientWidth ? left - Math.max(16, (wrap.clientWidth - objectWidth) / 2) : left;
+    const targetTop = objectHeight <= wrap.clientHeight ? top - Math.max(16, (wrap.clientHeight - objectHeight) / 2) : top;
     wrap.scrollLeft = clamp(targetLeft, 0, Math.max(0, wrap.scrollWidth - wrap.clientWidth));
     wrap.scrollTop = clamp(targetTop, 0, Math.max(0, wrap.scrollHeight - wrap.clientHeight));
   }
 
-  function autoPanOne(wrapId, canvasId) {
-    const wrap = getElement(wrapId);
-    const canvas = getElement(canvasId);
-    if (!wrap || !canvas || !canvas.width || !canvas.height) return;
-    const bounds = findVisibleBounds(canvas);
-    if (!bounds) return;
-    scrollWrapToBounds(wrap, canvas, bounds);
-  }
-
   function autoPanAll() {
     applyViewportFixes();
-    autoPanOne('bgRemoveOriginalWrap', 'bgRemoveOriginalCanvas');
-    autoPanOne('bgRemoveResultWrap', 'bgRemoveResultCanvas');
-    hasInitialAutoPanned = true;
+    [
+      ['bgRemoveOriginalWrap', 'bgRemoveOriginalCanvas'],
+      ['bgRemoveResultWrap', 'bgRemoveResultCanvas'],
+    ].forEach(([wrapId, canvasId]) => {
+      const wrap = getElement(wrapId);
+      const canvas = getElement(canvasId);
+      const bounds = findVisibleBounds(canvas);
+      if (bounds) scrollWrapToBounds(wrap, canvas, bounds);
+    });
   }
 
   function scheduleAutoPan(delay = 80) {
@@ -272,31 +236,22 @@
   }
 
   function distance(a, b) {
-    const dx = a.clientX - b.clientX;
-    const dy = a.clientY - b.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   }
 
   function midpoint(a, b) {
-    return {
-      clientX: (a.clientX + b.clientX) / 2,
-      clientY: (a.clientY + b.clientY) / 2,
-    };
+    return { clientX: (a.clientX + b.clientX) / 2, clientY: (a.clientY + b.clientY) / 2 };
   }
 
-  function makeAnchorMap(activeWrap, anchorOnActiveWrap) {
+  function buildPinchAnchorMap(activeWrap, midpointClient, startZoom) {
     const anchors = new Map();
     pairList().forEach(({ wrap }) => {
       if (!wrap) return;
-      if (wrap === activeWrap) {
-        anchors.set(wrap.id, anchorOnActiveWrap);
-        return;
-      }
-      const rect = wrap.getBoundingClientRect();
-      anchors.set(wrap.id, {
-        clientX: rect.left + wrap.clientWidth / 2,
-        clientY: rect.top + wrap.clientHeight / 2,
-      });
+      const clientPoint = wrap === activeWrap
+        ? midpointClient
+        : { clientX: wrap.getBoundingClientRect().left + wrap.clientWidth / 2, clientY: wrap.getBoundingClientRect().top + wrap.clientHeight / 2 };
+      const imagePoint = getImagePoint(wrap, clientPoint, startZoom);
+      anchors.set(wrap.id, { clientX: clientPoint.clientX, clientY: clientPoint.clientY, imageX: imagePoint.imageX, imageY: imagePoint.imageY });
     });
     return anchors;
   }
@@ -313,8 +268,7 @@
     let dragStartY = 0;
     let startScrollLeft = 0;
     let startScrollTop = 0;
-    let pinchStartDistance = 0;
-    let pinchStartZoom = 1;
+    let pinchState = null;
 
     function resetDrag() {
       activeDragId = null;
@@ -323,8 +277,12 @@
 
     function startPinch() {
       const [a, b] = Array.from(pointers.values()).slice(0, 2);
-      pinchStartDistance = Math.max(1, distance(a, b));
-      pinchStartZoom = currentZoom || 1;
+      const mid = midpoint(a, b);
+      pinchState = {
+        startDistance: Math.max(1, distance(a, b)),
+        startZoom: currentZoom || 1,
+        anchorMap: buildPinchAnchorMap(wrap, mid, currentZoom || 1),
+      };
       activeDragId = null;
       wrap.dataset.dragMoved = 'true';
     }
@@ -342,10 +300,7 @@
         startScrollLeft = wrap.scrollLeft;
         startScrollTop = wrap.scrollTop;
         wrap.style.cursor = 'grabbing';
-      } else if (pointers.size >= 2) {
-        startPinch();
-      }
-
+      } else if (pointers.size >= 2) startPinch();
       event.preventDefault();
     }, { passive: false });
 
@@ -355,10 +310,29 @@
 
       if (pointers.size >= 2) {
         const [a, b] = Array.from(pointers.values()).slice(0, 2);
+        if (!pinchState) startPinch();
+        const currentMid = midpoint(a, b);
         const nextDistance = Math.max(1, distance(a, b));
-        const activeAnchor = midpoint(a, b);
-        const nextZoom = pinchStartZoom * (nextDistance / Math.max(1, pinchStartDistance));
-        setZoom(nextZoom, makeAnchorMap(wrap, activeAnchor));
+        const nextZoom = pinchState.startZoom * (nextDistance / Math.max(1, pinchState.startDistance));
+        const runtimeAnchors = new Map();
+
+        pairList().forEach(({ wrap: targetWrap }) => {
+          if (!targetWrap) return;
+          const saved = pinchState.anchorMap.get(targetWrap.id);
+          if (!saved) return;
+          if (targetWrap === wrap) {
+            runtimeAnchors.set(targetWrap.id, { clientX: currentMid.clientX, clientY: currentMid.clientY, imageX: saved.imageX, imageY: saved.imageY });
+          } else {
+            runtimeAnchors.set(targetWrap.id, {
+              clientX: targetWrap.getBoundingClientRect().left + targetWrap.clientWidth / 2,
+              clientY: targetWrap.getBoundingClientRect().top + targetWrap.clientHeight / 2,
+              imageX: saved.imageX,
+              imageY: saved.imageY,
+            });
+          }
+        });
+
+        setZoom(nextZoom, runtimeAnchors);
         wrap.dataset.dragMoved = 'true';
         event.preventDefault();
         event.stopPropagation();
@@ -379,9 +353,9 @@
     const stopPointer = (event) => {
       pointers.delete(event.pointerId);
       if (pointers.size >= 2) startPinch();
+      else pinchState = null;
 
       if (activeDragId === event.pointerId) resetDrag();
-
       if (pointers.size === 1) {
         const [remainingId, remaining] = Array.from(pointers.entries())[0];
         activeDragId = remainingId;
@@ -390,10 +364,7 @@
         startScrollLeft = wrap.scrollLeft;
         startScrollTop = wrap.scrollTop;
       }
-
-      window.setTimeout(() => {
-        wrap.dataset.dragMoved = 'false';
-      }, 150);
+      window.setTimeout(() => { wrap.dataset.dragMoved = 'false'; }, 150);
     };
 
     wrap.addEventListener('pointerup', stopPointer);
@@ -401,25 +372,20 @@
     wrap.addEventListener('lostpointercapture', (event) => {
       pointers.delete(event.pointerId);
       if (activeDragId === event.pointerId) resetDrag();
+      if (pointers.size < 2) pinchState = null;
     });
   }
 
   function bindControls() {
-    getElement('bgRemoveInput')?.addEventListener('change', () => {
-      hasInitialAutoPanned = false;
-      scheduleAutoPan(160);
-    });
-
+    getElement('bgRemoveInput')?.addEventListener('change', () => scheduleAutoPan(160));
     getElement('bgRemoveApplyButton')?.addEventListener('click', () => {
       schedulePreservePosition(120);
       schedulePreservePosition(300);
     });
-
     getElement('bgRemovePreviewZoom')?.addEventListener('input', () => {
       const value = Number.parseFloat(getElement('bgRemovePreviewZoom')?.value || '1');
       setZoom(Number.isFinite(value) ? value : 1);
     });
-
     getElement('bgRemoveResetViewButton')?.addEventListener('click', () => scheduleAutoPan(0));
 
     ['bgRemoveColor', 'bgRemoveTolerance', 'bgRemoveStrength', 'bgRemoveCleanupInput'].forEach((id) => {
@@ -429,8 +395,7 @@
   }
 
   function install() {
-    currentZoom = Number.parseFloat(getElement('bgRemovePreviewZoom')?.value || '1') || 1;
-    currentZoom = clamp(currentZoom, MIN_ZOOM, MAX_ZOOM);
+    currentZoom = clamp(Number.parseFloat(getElement('bgRemovePreviewZoom')?.value || '1') || 1, MIN_ZOOM, MAX_ZOOM);
     applyViewportFixes();
     setSliderZoomValue(currentZoom);
     WRAP_IDS.forEach((id) => installTouchPanAndPinch(getElement(id)));
@@ -448,9 +413,6 @@
     schedulePreservePosition(300);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', install);
-  } else {
-    install();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
+  else install();
 })();
