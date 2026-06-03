@@ -26,6 +26,15 @@ function applyFixedFrameGrids() {
   }
 }
 
+function loadBackgroundRemoverAutoPan() {
+  if (document.querySelector('script[data-background-remover-autopan="true"]')) return;
+  const script = document.createElement('script');
+  script.src = 'src/background-remover-autopan.js?v=1';
+  script.defer = true;
+  script.dataset.backgroundRemoverAutopan = 'true';
+  document.body.append(script);
+}
+
 function bindFixedFrameGrids() {
   const sourceColsInput = document.getElementById('sourceColsInput');
   const frameList = document.getElementById('frameList');
@@ -53,6 +62,7 @@ function bindFixedFrameGrids() {
   });
 
   applyFixedFrameGrids();
+  loadBackgroundRemoverAutoPan();
 }
 
 if (document.readyState === 'loading') {
