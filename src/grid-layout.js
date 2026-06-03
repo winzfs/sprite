@@ -26,13 +26,18 @@ function applyFixedFrameGrids() {
   }
 }
 
-function loadBackgroundRemoverAutoPan() {
-  if (document.querySelector('script[data-background-remover-autopan="true"]')) return;
+function loadScriptOnce(src, dataKey) {
+  if (document.querySelector(`script[data-${dataKey}="true"]`)) return;
   const script = document.createElement('script');
-  script.src = 'src/background-remover-autopan.js?v=1';
+  script.src = src;
   script.defer = true;
-  script.dataset.backgroundRemoverAutopan = 'true';
+  script.dataset[dataKey.replace(/-([a-z])/g, (_, char) => char.toUpperCase())] = 'true';
   document.body.append(script);
+}
+
+function loadBackgroundRemoverHelpers() {
+  loadScriptOnce('src/background-remover-autopan.js?v=2', 'background-remover-autopan');
+  loadScriptOnce('src/background-remover-restore-brush.js?v=1', 'background-remover-restore-brush');
 }
 
 function bindFixedFrameGrids() {
@@ -62,7 +67,7 @@ function bindFixedFrameGrids() {
   });
 
   applyFixedFrameGrids();
-  loadBackgroundRemoverAutoPan();
+  loadBackgroundRemoverHelpers();
 }
 
 if (document.readyState === 'loading') {
