@@ -104,9 +104,10 @@
             </div>
             <div class="button-row">
               <button id="bgRemoveApplyButton" type="button" class="primary">투명 처리</button>
+              <button id="bgRemoveResetViewButton" type="button">미리보기 위치 초기화</button>
               <a id="bgRemoveDownloadLink" class="download-link hidden" download="transparent-background.png">PNG 다운로드</a>
             </div>
-            <div id="bgRemoveStatus" class="status">이미지를 올린 뒤 색상 피커로 지울 색을 선택하세요. 원본 미리보기를 클릭하면 클릭한 픽셀 색상도 선택됩니다.</div>
+            <div id="bgRemoveStatus" class="status">이미지를 올린 뒤 색상 피커로 지울 색을 선택하세요. 원본 미리보기는 짧게 터치하면 색상 선택, 터치 드래그하면 이동합니다.</div>
           </div>
         </section>
         <section class="panel">
@@ -114,14 +115,14 @@
           <div class="panel-body controls">
             <div class="grid-2">
               <div>
-                <div class="sub-title">원본 클릭 색상 추출</div>
-                <div id="bgRemoveOriginalWrap" style="overflow:auto; max-height:520px; border-radius:12px;">
+                <div class="sub-title">원본 클릭 색상 추출 · 터치/드래그 이동</div>
+                <div id="bgRemoveOriginalWrap" style="overflow:auto; max-height:520px; border-radius:12px; cursor:grab; touch-action:none; user-select:none; overscroll-behavior:contain;">
                   <canvas id="bgRemoveOriginalCanvas" class="media-canvas"></canvas>
                 </div>
               </div>
               <div>
-                <div class="sub-title">투명 처리 결과</div>
-                <div id="bgRemoveResultWrap" style="overflow:auto; max-height:520px; border-radius:12px;">
+                <div class="sub-title">투명 처리 결과 · 터치/드래그 이동</div>
+                <div id="bgRemoveResultWrap" style="overflow:auto; max-height:520px; border-radius:12px; cursor:grab; touch-action:none; user-select:none; overscroll-behavior:contain;">
                   <canvas id="bgRemoveResultCanvas" class="media-canvas"></canvas>
                 </div>
               </div>
@@ -150,8 +151,11 @@
     const cleanupInput = document.getElementById('bgRemoveCleanupInput');
     const autoApplyInput = document.getElementById('bgRemoveAutoApplyInput');
     const applyButton = document.getElementById('bgRemoveApplyButton');
+    const resetViewButton = document.getElementById('bgRemoveResetViewButton');
     const downloadLink = document.getElementById('bgRemoveDownloadLink');
     const status = document.getElementById('bgRemoveStatus');
+    const originalWrap = document.getElementById('bgRemoveOriginalWrap');
+    const resultWrap = document.getElementById('bgRemoveResultWrap');
     const originalCanvas = document.getElementById('bgRemoveOriginalCanvas');
     const resultCanvas = document.getElementById('bgRemoveResultCanvas');
     const originalCtx = originalCanvas.getContext('2d', { willReadFrequently: true });
@@ -312,6 +316,7 @@
         canvas.style.backgroundColor = '';
         canvas.style.backgroundImage = '';
         canvas.style.backgroundSize = '';
+        canvas.style.backgroundPosition = '';
         if (value === 'white') {
           canvas.style.backgroundColor = '#ffffff';
         } else if (value === 'dark') {
@@ -320,6 +325,7 @@
           canvas.style.backgroundColor = '#ffffff';
           canvas.style.backgroundImage = 'linear-gradient(45deg, #ddd 25%, transparent 25%), linear-gradient(-45deg, #ddd 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ddd 75%), linear-gradient(-45deg, transparent 75%, #ddd 75%)';
           canvas.style.backgroundSize = '20px 20px';
+          canvas.style.backgroundPosition = '0 0, 0 10px, 10px -10px, -10px 0px';
         }
       });
     }
@@ -334,6 +340,68 @@
         canvas.style.imageRendering = zoom > 1 ? 'pixelated' : 'auto';
       });
       previewZoomText.value = `${zoom}x`;
+    }
+
+    function resetPreviewPosition() {
+      [originalWrap, resultWrap].forEach((wrap) => {
+        if (!wrap) return;
+        wrap.scrollLeft = 0;
+        wrap.scrollTop = 0;
+      });
+    }
+
+    function installDragPan(wrap) {
+      if (!wrap || wrap.dataset.panBound === 'true') return;
+      wrap.dataset.panBound = 'true';
+
+      let isDragging = false;
+      let pointerId = null;
+      let startX = 0;
+      let startY = 0;
+      let startScrollLeft = 0;
+      let startScrollTop = 0;
+
+      wrap.addEventListener('pointerdown', (event) => {
+        if (event.button !== undefined && event.button !== 0) return;
+        isDragging = true;
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        startScrollLeft = wrap.scrollLeft;
+        startScrollTop = wrap.scrollTop;
+        wrap.dataset.dragMoved = 'false';
+        wrap.style.cursor = 'grabbing';
+        wrap.setPointerCapture?.(event.pointerId);
+      });
+
+      wrap.addEventListener('pointermove', (event) => {
+        if (!isDragging || event.pointerId !== pointerId) return;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        if (Math.abs(dx) + Math.abs(dy) > 4) wrap.dataset.dragMoved = 'true';
+        wrap.scrollLeft = startScrollLeft - dx;
+        wrap.scrollTop = startScrollTop - dy;
+        event.preventDefault();
+      });
+
+      const stopDrag = (event) => {
+        if (!isDragging || event.pointerId !== pointerId) return;
+        isDragging = false;
+        pointerId = null;
+        wrap.style.cursor = 'grab';
+        wrap.releasePointerCapture?.(event.pointerId);
+        window.setTimeout(() => {
+          wrap.dataset.dragMoved = 'false';
+        }, 80);
+      };
+
+      wrap.addEventListener('pointerup', stopDrag);
+      wrap.addEventListener('pointercancel', stopDrag);
+      wrap.addEventListener('lostpointercapture', () => {
+        isDragging = false;
+        pointerId = null;
+        wrap.style.cursor = 'grab';
+      });
     }
 
     function drawImageToCanvases() {
@@ -351,6 +419,7 @@
       resultCtx.drawImage(image, 0, 0);
       applyPreviewBackground();
       applyPreviewZoom();
+      resetPreviewPosition();
     }
 
     function updateDownload() {
@@ -426,7 +495,7 @@
       image = new Image();
       image.onload = () => {
         drawImageToCanvases();
-        setStatus(`로드 완료: ${file.name} / ${originalCanvas.width}x${originalCanvas.height}. 색상을 고른 뒤 투명 처리하세요.`);
+        setStatus(`로드 완료: ${file.name} / ${originalCanvas.width}x${originalCanvas.height}. 짧게 터치하면 색상 선택, 터치 드래그하면 미리보기를 이동합니다.`);
       };
       image.onerror = () => {
         image = null;
@@ -445,9 +514,11 @@
     });
     cleanupInput?.addEventListener('change', autoApply);
     applyButton.addEventListener('click', removeSelectedColor);
+    resetViewButton?.addEventListener('click', resetPreviewPosition);
 
     originalCanvas.addEventListener('click', (event) => {
       if (!image || !originalCanvas.width || !originalCanvas.height) return;
+      if (originalWrap?.dataset.dragMoved === 'true') return;
       const rect = originalCanvas.getBoundingClientRect();
       const scaleX = originalCanvas.width / rect.width;
       const scaleY = originalCanvas.height / rect.height;
@@ -458,6 +529,8 @@
       removeSelectedColor();
     });
 
+    installDragPan(originalWrap);
+    installDragPan(resultWrap);
     syncControls();
     applyPreviewBackground();
     applyPreviewZoom();
