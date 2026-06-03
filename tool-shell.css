@@ -112,10 +112,241 @@
 }
 
 .converter-layout {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(280px, 420px) minmax(320px, 1fr);
+  grid-template-columns: minmax(300px, 430px) minmax(360px, 1fr);
+  gap: 18px;
+  padding: 18px;
+}
+
+#view-videoToGif,
+#view-gifToVideo {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(110, 168, 254, 0.16), transparent 30rem),
+    radial-gradient(circle at 86% 8%, rgba(76, 211, 194, 0.12), transparent 28rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 22rem);
+}
+
+#view-videoToGif .app-header,
+#view-gifToVideo .app-header {
+  position: relative;
+  margin: 18px 18px 0;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 24px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.025)),
+    linear-gradient(180deg, rgba(18, 23, 34, 0.96), rgba(10, 13, 20, 0.96));
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.45);
+}
+
+#view-videoToGif .app-header::before,
+#view-gifToVideo .app-header::before {
+  content: "LOCAL MEDIA RACK";
+  display: inline-flex;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  border: 1px solid rgba(110, 168, 254, 0.35);
+  border-radius: 999px;
+  background: rgba(110, 168, 254, 0.11);
+  color: #bcd6ff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+#view-videoToGif .app-header::after,
+#view-gifToVideo .app-header::after {
+  content: "";
+  position: absolute;
+  right: -72px;
+  top: -72px;
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(110, 168, 254, 0.24), transparent 68%);
+  pointer-events: none;
+}
+
+#view-videoToGif .app-header h1,
+#view-gifToVideo .app-header h1 {
+  max-width: 760px;
+  font-size: clamp(32px, 5vw, 58px);
+  line-height: 0.92;
+  letter-spacing: -0.07em;
+}
+
+#view-videoToGif .app-header p,
+#view-gifToVideo .app-header p {
+  max-width: 760px;
+  color: #b8c4d9;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+#view-videoToGif .app-header p::after,
+#view-gifToVideo .app-header p::after {
+  content: "업로드 없음 · 브라우저 로컬 처리 · 빠른 다운로드";
+  display: flex;
+  width: fit-content;
+  margin-top: 18px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(8, 11, 17, 0.62);
+  color: #7cf2c8;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+}
+
+#view-videoToGif .panel,
+#view-gifToVideo .panel {
+  border-color: rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.025)),
+    rgba(13, 17, 25, 0.94);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
+}
+
+#view-videoToGif .panel-title,
+#view-gifToVideo .panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
+  color: #f6f8ff;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+#view-videoToGif .panel-title::after,
+#view-gifToVideo .panel-title::after {
+  content: "READY";
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: rgba(124, 242, 200, 0.11);
+  color: #7cf2c8;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+}
+
+#view-videoToGif .controls,
+#view-gifToVideo .controls {
   gap: 16px;
-  padding: 16px;
+}
+
+#view-videoToGif label,
+#view-gifToVideo label {
+  position: relative;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 16px;
+  background: rgba(6, 9, 15, 0.42);
+  color: #aebbd1;
+}
+
+#view-videoToGif label:focus-within,
+#view-gifToVideo label:focus-within {
+  border-color: rgba(110, 168, 254, 0.72);
+  box-shadow: 0 0 0 4px rgba(110, 168, 254, 0.11);
+}
+
+#view-videoToGif input[type="number"],
+#view-videoToGif input[type="file"],
+#view-videoToGif input[type="text"],
+#view-gifToVideo input[type="number"],
+#view-gifToVideo input[type="file"],
+#view-gifToVideo input[type="text"] {
+  min-height: 46px;
+  border-radius: 12px;
+  border-color: rgba(255, 255, 255, 0.11);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015)),
+    #070a10;
+  color: #f6f8ff;
+  font-weight: 800;
+}
+
+#view-videoToGif .check-label,
+#view-gifToVideo .check-label {
+  min-height: 70px;
+}
+
+#view-videoToGif .button-row,
+#view-gifToVideo .button-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+#view-videoToGif .button-row button,
+#view-videoToGif .button-row .download-link,
+#view-gifToVideo .button-row button,
+#view-gifToVideo .button-row .download-link {
+  min-height: 48px;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+#view-videoToGif button.primary,
+#view-gifToVideo button.primary,
+#view-videoToGif .download-link,
+#view-gifToVideo .download-link {
+  background:
+    linear-gradient(180deg, #9dc5ff, #5e97ff 54%, #3676f6),
+    var(--primary);
+  color: #06101f;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+#view-videoToGif .status,
+#view-gifToVideo .status {
+  min-height: 54px;
+  padding: 13px 14px;
+  border: 1px solid rgba(124, 242, 200, 0.16);
+  border-radius: 16px;
+  background:
+    linear-gradient(90deg, rgba(124, 242, 200, 0.09), transparent),
+    rgba(4, 8, 12, 0.7);
+  color: #bfffe8;
+  font-weight: 750;
+}
+
+progress {
+  width: 100%;
+  height: 16px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7cf2c8, #6ea8fe);
+}
+
+progress::-moz-progress-bar {
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7cf2c8, #6ea8fe);
+}
+
+#view-videoToGif progress,
+#view-gifToVideo progress {
+  box-shadow: 0 0 28px rgba(110, 168, 254, 0.18);
 }
 
 .media-preview,
@@ -126,6 +357,27 @@
   border-radius: 14px;
   background: #0f131b;
   object-fit: contain;
+}
+
+#view-videoToGif .media-preview,
+#view-videoToGif .media-canvas,
+#view-gifToVideo .media-preview,
+#view-gifToVideo .media-canvas {
+  border-radius: 18px;
+  border-color: rgba(255, 255, 255, 0.13);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(110, 168, 254, 0.12), transparent 18rem),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 28px),
+    #05070c;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 18px 48px rgba(0, 0, 0, 0.32);
+}
+
+#view-videoToGif .media-canvas,
+#view-gifToVideo .media-canvas {
+  min-height: 220px;
 }
 
 .media-canvas {
@@ -143,11 +395,6 @@
   color: #06101f;
   font-weight: 900;
   text-decoration: none;
-}
-
-progress {
-  width: 100%;
-  height: 14px;
 }
 
 @media (max-width: 900px) {
@@ -263,5 +510,27 @@ progress {
     grid-template-columns: 1fr;
     padding: 10px;
     gap: 10px;
+  }
+
+  #view-videoToGif .app-header,
+  #view-gifToVideo .app-header {
+    margin: 10px 10px 0;
+    padding: 64px 18px 20px;
+    border-radius: 20px;
+  }
+
+  #view-videoToGif .app-header h1,
+  #view-gifToVideo .app-header h1 {
+    font-size: clamp(30px, 10vw, 44px);
+  }
+
+  #view-videoToGif .button-row,
+  #view-gifToVideo .button-row {
+    grid-template-columns: 1fr;
+  }
+
+  #view-videoToGif label,
+  #view-gifToVideo label {
+    padding: 11px;
   }
 }
