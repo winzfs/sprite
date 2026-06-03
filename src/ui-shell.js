@@ -70,11 +70,22 @@
             <label>그림 파일 <input id="bgRemoveInput" type="file" accept="image/*"></label>
             <div class="grid-2">
               <label>지울 색상 <input id="bgRemoveColor" type="color" value="#00ff00"></label>
-              <label>허용 오차 <input id="bgRemoveTolerance" type="range" min="0" max="100" value="12"></label>
+              <label>허용 오차 <input id="bgRemoveTolerance" type="range" min="0" max="160" value="34"></label>
             </div>
             <div class="grid-2">
               <label>현재 색상값 <input id="bgRemoveColorText" type="text" value="#00ff00" readonly></label>
-              <label>현재 오차값 <input id="bgRemoveToleranceText" type="text" value="12" readonly></label>
+              <label>현재 오차값 <input id="bgRemoveToleranceText" type="text" value="34" readonly></label>
+            </div>
+            <div class="grid-2">
+              <label>제거 강도
+                <select id="bgRemoveStrength">
+                  <option value="precise">정밀</option>
+                  <option value="normal" selected>기본</option>
+                  <option value="clean">깔끔</option>
+                  <option value="aggressive">강하게</option>
+                </select>
+              </label>
+              <label class="check-label"><input id="bgRemoveCleanupInput" type="checkbox" checked> 가장자리 자잘한 픽셀 정리</label>
             </div>
             <div class="grid-2">
               <label>미리보기 배경
@@ -85,7 +96,11 @@
                   <option value="transparent">기본 투명</option>
                 </select>
               </label>
-              <label class="check-label"><input id="bgRemoveCleanupInput" type="checkbox" checked> 가장자리 자잘한 픽셀 정리</label>
+              <label>미리보기 확대 <input id="bgRemovePreviewZoom" type="range" min="1" max="8" value="2"></label>
+            </div>
+            <div class="grid-2">
+              <label>현재 확대 <input id="bgRemovePreviewZoomText" type="text" value="2x" readonly></label>
+              <label class="check-label"><input id="bgRemoveAutoApplyInput" type="checkbox" checked> 설정 변경 시 자동 적용</label>
             </div>
             <div class="button-row">
               <button id="bgRemoveApplyButton" type="button" class="primary">투명 처리</button>
@@ -100,11 +115,15 @@
             <div class="grid-2">
               <div>
                 <div class="sub-title">원본 클릭 색상 추출</div>
-                <canvas id="bgRemoveOriginalCanvas" class="media-canvas"></canvas>
+                <div id="bgRemoveOriginalWrap" style="overflow:auto; max-height:520px; border-radius:12px;">
+                  <canvas id="bgRemoveOriginalCanvas" class="media-canvas"></canvas>
+                </div>
               </div>
               <div>
                 <div class="sub-title">투명 처리 결과</div>
-                <canvas id="bgRemoveResultCanvas" class="media-canvas"></canvas>
+                <div id="bgRemoveResultWrap" style="overflow:auto; max-height:520px; border-radius:12px;">
+                  <canvas id="bgRemoveResultCanvas" class="media-canvas"></canvas>
+                </div>
               </div>
             </div>
           </div>
@@ -124,8 +143,12 @@
     const colorText = document.getElementById('bgRemoveColorText');
     const toleranceInput = document.getElementById('bgRemoveTolerance');
     const toleranceText = document.getElementById('bgRemoveToleranceText');
+    const strengthInput = document.getElementById('bgRemoveStrength');
     const previewBgInput = document.getElementById('bgRemovePreviewBg');
+    const previewZoomInput = document.getElementById('bgRemovePreviewZoom');
+    const previewZoomText = document.getElementById('bgRemovePreviewZoomText');
     const cleanupInput = document.getElementById('bgRemoveCleanupInput');
+    const autoApplyInput = document.getElementById('bgRemoveAutoApplyInput');
     const applyButton = document.getElementById('bgRemoveApplyButton');
     const downloadLink = document.getElementById('bgRemoveDownloadLink');
     const status = document.getElementById('bgRemoveStatus');
@@ -151,7 +174,20 @@
 
     function readTolerance() {
       const value = Number.parseInt(toleranceInput.value, 10);
-      return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0;
+      return Number.isFinite(value) ? Math.max(0, Math.min(160, value)) : 0;
+    }
+
+    function readZoom() {
+      const value = Number.parseInt(previewZoomInput.value, 10);
+      return Number.isFinite(value) ? Math.max(1, Math.min(8, value)) : 1;
+    }
+
+    function readStrength() {
+      const key = strengthInput?.value || 'normal';
+      if (key === 'precise') return { key, edgeBoost: 10, passes: 1, isolatedMax: 0, soften: false };
+      if (key === 'clean') return { key, edgeBoost: 38, passes: 2, isolatedMax: 2, soften: true };
+      if (key === 'aggressive') return { key, edgeBoost: 62, passes: 3, isolatedMax: 3, soften: true };
+      return { key, edgeBoost: 24, passes: 1, isolatedMax: 1, soften: true };
     }
 
     function hexToRgb(hex) {
@@ -167,10 +203,15 @@
       return `#${[r, g, b].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
     }
 
+    function colorDistance(data, index, target) {
+      const dr = data[index] - target.r;
+      const dg = data[index + 1] - target.g;
+      const db = data[index + 2] - target.b;
+      return Math.sqrt(dr * dr + dg * dg + db * db);
+    }
+
     function colorWithinTolerance(data, index, target, tolerance) {
-      return Math.abs(data[index] - target.r) <= tolerance
-        && Math.abs(data[index + 1] - target.g) <= tolerance
-        && Math.abs(data[index + 2] - target.b) <= tolerance;
+      return colorDistance(data, index, target) <= tolerance;
     }
 
     function pixelIndex(width, x, y) {
@@ -201,33 +242,55 @@
       return count;
     }
 
-    function cleanupEdgePixels(data, width, height, target, tolerance) {
-      const removeIndexes = new Set();
-      const edgeTolerance = Math.min(130, tolerance + 22);
+    function cleanupEdgePixels(data, width, height, target, tolerance, strength) {
+      let totalRemoved = 0;
+      const edgeTolerance = Math.min(255, tolerance + strength.edgeBoost);
+      const softenTolerance = Math.min(255, tolerance + strength.edgeBoost * 0.55);
 
-      for (let y = 0; y < height; y += 1) {
-        for (let x = 0; x < width; x += 1) {
-          const i = pixelIndex(width, x, y);
-          if (data[i + 3] === 0) continue;
+      for (let pass = 0; pass < strength.passes; pass += 1) {
+        const removeIndexes = new Set();
+        const softenIndexes = new Map();
 
-          const transparentNeighbors = countTransparentNeighbors(data, width, height, x, y);
-          if (transparentNeighbors > 0 && colorWithinTolerance(data, i, target, edgeTolerance)) {
-            removeIndexes.add(i);
-            continue;
-          }
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const i = pixelIndex(width, x, y);
+            if (data[i + 3] === 0) continue;
 
-          const opaqueNeighbors = countOpaqueNeighbors(data, width, height, x, y);
-          if (opaqueNeighbors <= 1 && colorWithinTolerance(data, i, target, edgeTolerance)) {
-            removeIndexes.add(i);
+            const distance = colorDistance(data, i, target);
+            const transparentNeighbors = countTransparentNeighbors(data, width, height, x, y);
+            const opaqueNeighbors = countOpaqueNeighbors(data, width, height, x, y);
+
+            if (transparentNeighbors > 0 && distance <= edgeTolerance) {
+              removeIndexes.add(i);
+              continue;
+            }
+
+            if (opaqueNeighbors <= strength.isolatedMax && distance <= edgeTolerance) {
+              removeIndexes.add(i);
+              continue;
+            }
+
+            if (strength.soften && transparentNeighbors > 0 && distance <= softenTolerance) {
+              const fade = Math.max(0, Math.min(1, (distance - tolerance) / Math.max(1, softenTolerance - tolerance)));
+              const alpha = Math.round(data[i + 3] * fade);
+              softenIndexes.set(i, alpha);
+            }
           }
         }
+
+        softenIndexes.forEach((alpha, i) => {
+          data[i + 3] = Math.min(data[i + 3], alpha);
+        });
+
+        removeIndexes.forEach((i) => {
+          if (data[i + 3] !== 0) totalRemoved += 1;
+          data[i + 3] = 0;
+        });
+
+        if (!removeIndexes.size) break;
       }
 
-      removeIndexes.forEach((i) => {
-        data[i + 3] = 0;
-      });
-
-      return removeIndexes.size;
+      return totalRemoved;
     }
 
     function revokeDownloadUrl() {
@@ -239,6 +302,7 @@
     function syncControls() {
       setColor(colorInput.value);
       toleranceText.value = String(readTolerance());
+      previewZoomText.value = `${readZoom()}x`;
     }
 
     function applyPreviewBackground() {
@@ -260,6 +324,18 @@
       });
     }
 
+    function applyPreviewZoom() {
+      const zoom = readZoom();
+      [originalCanvas, resultCanvas].forEach((canvas) => {
+        if (!canvas.width || !canvas.height) return;
+        canvas.style.width = `${canvas.width * zoom}px`;
+        canvas.style.height = `${canvas.height * zoom}px`;
+        canvas.style.maxWidth = 'none';
+        canvas.style.imageRendering = zoom > 1 ? 'pixelated' : 'auto';
+      });
+      previewZoomText.value = `${zoom}x`;
+    }
+
     function drawImageToCanvases() {
       if (!image) return;
       originalCanvas.width = image.naturalWidth || image.width;
@@ -274,6 +350,7 @@
       originalCtx.drawImage(image, 0, 0);
       resultCtx.drawImage(image, 0, 0);
       applyPreviewBackground();
+      applyPreviewZoom();
     }
 
     function updateDownload() {
@@ -305,6 +382,7 @@
       const data = imageData.data;
       const target = hexToRgb(colorInput.value);
       const tolerance = readTolerance();
+      const strength = readStrength();
       let removed = 0;
 
       for (let i = 0; i < data.length; i += 4) {
@@ -317,18 +395,24 @@
 
       let cleanupRemoved = 0;
       if (cleanupInput?.checked) {
-        cleanupRemoved = cleanupEdgePixels(data, resultCanvas.width, resultCanvas.height, target, tolerance);
+        cleanupRemoved = cleanupEdgePixels(data, resultCanvas.width, resultCanvas.height, target, tolerance, strength);
         removed += cleanupRemoved;
       }
 
       resultCtx.putImageData(imageData, 0, 0);
       updateDownload();
       applyPreviewBackground();
+      applyPreviewZoom();
 
       const total = resultCanvas.width * resultCanvas.height;
       const ratio = total ? ((removed / total) * 100).toFixed(2) : '0.00';
       const cleanupText = cleanupRemoved ? ` / 가장자리 ${cleanupRemoved.toLocaleString()}픽셀 추가 정리` : '';
       setStatus(`${colorInput.value} 색상 기준으로 ${removed.toLocaleString()}픽셀을 투명 처리했습니다. (${ratio}%)${cleanupText}`);
+    }
+
+    function autoApply() {
+      syncControls();
+      if (image && autoApplyInput?.checked) removeSelectedColor();
     }
 
     input.addEventListener('change', () => {
@@ -351,18 +435,15 @@
       image.src = objectUrl;
     });
 
-    colorInput.addEventListener('input', () => {
-      syncControls();
-      if (image) removeSelectedColor();
-    });
-    toleranceInput.addEventListener('input', () => {
-      syncControls();
-      if (image) removeSelectedColor();
-    });
+    colorInput.addEventListener('input', autoApply);
+    toleranceInput.addEventListener('input', autoApply);
+    strengthInput?.addEventListener('change', autoApply);
     previewBgInput?.addEventListener('change', applyPreviewBackground);
-    cleanupInput?.addEventListener('change', () => {
-      if (image) removeSelectedColor();
+    previewZoomInput?.addEventListener('input', () => {
+      syncControls();
+      applyPreviewZoom();
     });
+    cleanupInput?.addEventListener('change', autoApply);
     applyButton.addEventListener('click', removeSelectedColor);
 
     originalCanvas.addEventListener('click', (event) => {
@@ -379,6 +460,7 @@
 
     syncControls();
     applyPreviewBackground();
+    applyPreviewZoom();
   }
 
   function installBackgroundRemover() {
