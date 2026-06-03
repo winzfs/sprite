@@ -43,9 +43,8 @@ function loadBackgroundRemoverHelpers() {
 function loadMediaToolHelpers() {
   loadBackgroundRemoverHelpers();
   loadScriptOnce('src/pixel-art-converter.js?v=1', 'pixel-art-converter');
-  loadScriptOnce('src/pixel-art-ultra-detail.js?v=2', 'pixel-art-ultra-detail');
-  loadScriptOnce('src/pixel-art-smart-detail.js?v=3', 'pixel-art-smart-detail');
-  loadScriptOnce('src/pixel-art-floating-controls.js?v=3', 'pixel-art-floating-controls');
+  loadScriptOnce('src/pixel-art-unified-modes.js?v=1', 'pixel-art-unified-modes');
+  loadScriptOnce('src/pixel-art-floating-controls.js?v=4', 'pixel-art-floating-controls');
 }
 
 function bindFixedFrameGrids() {
