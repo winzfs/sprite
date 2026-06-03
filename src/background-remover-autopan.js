@@ -3,6 +3,7 @@
   const MIN_ZOOM = 1;
   const MAX_ZOOM = 32;
   let currentZoom = 1;
+  let hasInitialAutoPanned = false;
 
   function getElement(id) {
     return document.getElementById(id);
@@ -108,6 +109,30 @@
       zoomInput.value = String(rounded);
     }
     if (zoomText) zoomText.value = `${rounded}x`;
+  }
+
+  function captureScrollRatios() {
+    return pairList().map(({ wrap }) => {
+      if (!wrap) return null;
+      const maxLeft = Math.max(1, wrap.scrollWidth - wrap.clientWidth);
+      const maxTop = Math.max(1, wrap.scrollHeight - wrap.clientHeight);
+      return {
+        wrap,
+        leftRatio: wrap.scrollLeft / maxLeft,
+        topRatio: wrap.scrollTop / maxTop,
+      };
+    });
+  }
+
+  function restoreScrollRatios(ratios) {
+    if (!ratios) return;
+    ratios.forEach((item) => {
+      if (!item?.wrap) return;
+      const maxLeft = Math.max(0, item.wrap.scrollWidth - item.wrap.clientWidth);
+      const maxTop = Math.max(0, item.wrap.scrollHeight - item.wrap.clientHeight);
+      item.wrap.scrollLeft = clamp(item.leftRatio * maxLeft, 0, maxLeft);
+      item.wrap.scrollTop = clamp(item.topRatio * maxTop, 0, maxTop);
+    });
   }
 
   function getAnchorImagePoint(wrap, anchorClient) {
@@ -229,12 +254,21 @@
     applyViewportFixes();
     autoPanOne('bgRemoveOriginalWrap', 'bgRemoveOriginalCanvas');
     autoPanOne('bgRemoveResultWrap', 'bgRemoveResultCanvas');
+    hasInitialAutoPanned = true;
   }
 
   function scheduleAutoPan(delay = 80) {
     window.setTimeout(autoPanAll, delay);
     window.setTimeout(autoPanAll, delay + 180);
     window.setTimeout(autoPanAll, delay + 500);
+  }
+
+  function schedulePreservePosition(delay = 0) {
+    const ratios = captureScrollRatios();
+    window.setTimeout(() => {
+      applyViewportFixes();
+      restoreScrollRatios(ratios);
+    }, delay);
   }
 
   function distance(a, b) {
@@ -371,17 +405,26 @@
   }
 
   function bindControls() {
-    getElement('bgRemoveInput')?.addEventListener('change', () => scheduleAutoPan(160));
-    getElement('bgRemoveApplyButton')?.addEventListener('click', () => scheduleAutoPan(120));
+    getElement('bgRemoveInput')?.addEventListener('change', () => {
+      hasInitialAutoPanned = false;
+      scheduleAutoPan(160);
+    });
+
+    getElement('bgRemoveApplyButton')?.addEventListener('click', () => {
+      schedulePreservePosition(120);
+      schedulePreservePosition(300);
+    });
+
     getElement('bgRemovePreviewZoom')?.addEventListener('input', () => {
       const value = Number.parseFloat(getElement('bgRemovePreviewZoom')?.value || '1');
       setZoom(Number.isFinite(value) ? value : 1);
     });
+
     getElement('bgRemoveResetViewButton')?.addEventListener('click', () => scheduleAutoPan(0));
 
     ['bgRemoveColor', 'bgRemoveTolerance', 'bgRemoveStrength', 'bgRemoveCleanupInput'].forEach((id) => {
-      getElement(id)?.addEventListener('input', () => scheduleAutoPan(140));
-      getElement(id)?.addEventListener('change', () => scheduleAutoPan(140));
+      getElement(id)?.addEventListener('input', () => schedulePreservePosition(140));
+      getElement(id)?.addEventListener('change', () => schedulePreservePosition(140));
     });
   }
 
@@ -401,8 +444,8 @@
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    window.addEventListener('resize', () => scheduleAutoPan(60));
-    scheduleAutoPan(300);
+    window.addEventListener('resize', () => schedulePreservePosition(60));
+    schedulePreservePosition(300);
   }
 
   if (document.readyState === 'loading') {
