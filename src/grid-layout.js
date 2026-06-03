@@ -16,7 +16,7 @@ function applyFixedFrameGrids() {
   gridState.sourceCols = readPositiveIntById('sourceColsInput', gridState.sourceCols);
 
   if (frameList) {
-    frameList.style.gridTemplateColumns = `repeat(${gridState.sourceCols}, minmax(0, 1fr))`;
+    frameList.style.gridTemplateColumns = `repeat(${gridState.sourceCols}, minmax(0, 1fr)`;
     frameList.dataset.cols = String(gridState.sourceCols);
   }
 
@@ -54,11 +54,7 @@ function loadMediaToolHelpers() {
     .then(() => loadScriptOnce('src/pixel-art-converter.js?v=1', 'pixel-art-converter'))
     .then(() => loadScriptOnce('src/pixel-art-unified-modes.js?v=2', 'pixel-art-unified-modes'))
     .then(() => loadScriptOnce('src/pixel-art-floating-controls.js?v=5', 'pixel-art-floating-controls'))
-    .then(() => loadScriptOnce('src/sfx-maker.js?v=1', 'sfx-maker'))
-    .then(() => loadScriptOnce('src/sfx-pro-studio.js?v=1', 'sfx-pro-studio'))
-    .then(() => loadScriptOnce('src/sfx-mastering-studio.js?v=1', 'sfx-mastering-studio'))
-    .then(() => loadScriptOnce('src/sfx-waveform-bank.js?v=1', 'sfx-waveform-bank'))
-    .then(() => loadScriptOnce('src/sfx-waveform-engine.js?v=1', 'sfx-waveform-engine'));
+    .then(() => loadScriptOnce('src/sfx-maker.js?v=2', 'sfx-maker'));
 }
 
 function bindFixedFrameGrids() {
