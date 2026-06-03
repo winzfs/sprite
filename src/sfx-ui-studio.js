@@ -1,5 +1,7 @@
 (() => {
   const STYLE_ID = 'sfxUiStudioStyle';
+  const MAX_TRIES = 40;
+  let installed = false;
 
   function $(id) { return document.getElementById(id); }
   function el(html) {
@@ -14,7 +16,7 @@
     style.id = STYLE_ID;
     style.textContent = `
       #view-sfxMaker.sfx-studio-view .sfx-app { gap:14px; }
-      #view-sfxMaker.sfx-studio-view .sfx-hero { position:sticky; top:10px; z-index:20; padding:18px; border-radius:26px; background:radial-gradient(circle at 8% 10%,rgba(56,189,248,.36),transparent 30%),radial-gradient(circle at 88% 18%,rgba(168,85,247,.32),transparent 32%),linear-gradient(135deg,#020617,#111827 48%,#172554); }
+      #view-sfxMaker.sfx-studio-view .sfx-hero { position:relative; padding:18px; border-radius:26px; background:radial-gradient(circle at 8% 10%,rgba(56,189,248,.36),transparent 30%),radial-gradient(circle at 88% 18%,rgba(168,85,247,.32),transparent 32%),linear-gradient(135deg,#020617,#111827 48%,#172554); }
       #view-sfxMaker.sfx-studio-view .sfx-hero h1 { font-size:25px; margin:9px 0 5px; }
       #view-sfxMaker.sfx-studio-view .sfx-hero p { font-size:13px; max-width:660px; }
       #view-sfxMaker.sfx-studio-view .sfx-transport { align-items:stretch; }
@@ -42,7 +44,7 @@
       .sfx-studio-pill { border:0; border-radius:999px; padding:8px 10px; font-size:11px; font-weight:950; color:#0f172a; background:#e0f2fe; cursor:pointer; }
       .sfx-studio-mode-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; grid-column:1/-1; }
       .sfx-studio-mini { font-size:11px; color:#64748b; margin-top:8px; line-height:1.4; }
-      @media (max-width:960px) { #view-sfxMaker.sfx-studio-view .sfx-hero { position:relative; top:auto; } #view-sfxMaker.sfx-studio-view .sfx-main-grid { grid-template-columns:1fr; } #view-sfxMaker.sfx-studio-view .sfx-card:nth-of-type(2) { order:-1; } .sfx-studio-console { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+      @media (max-width:960px) { #view-sfxMaker.sfx-studio-view .sfx-main-grid { grid-template-columns:1fr; } #view-sfxMaker.sfx-studio-view .sfx-card:nth-of-type(2) { order:-1; } .sfx-studio-console { grid-template-columns:repeat(2,minmax(0,1fr)); } }
       @media (max-width:640px) { #view-sfxMaker.sfx-studio-view .sfx-hero { padding:15px; border-radius:20px; } #view-sfxMaker.sfx-studio-view .sfx-hero-top { display:grid; } #view-sfxMaker.sfx-studio-view .sfx-transport { display:grid; grid-template-columns:1fr 1fr; } #view-sfxMaker.sfx-studio-view #sfxRandomButton { grid-column:1/-1; } .sfx-studio-toolbar { overflow-x:auto; flex-wrap:nowrap; padding-bottom:4px; } .sfx-studio-tab { white-space:nowrap; flex:0 0 auto; } .sfx-studio-panel { grid-template-columns:1fr; } .sfx-studio-mode-row { grid-template-columns:1fr; } #view-sfxMaker.sfx-studio-view .sfx-preset { min-width:138px; } }
       @media (prefers-color-scheme: dark) { .sfx-studio-tab { color:#d1d5db; background:#374151; } .sfx-studio-note { color:#d1d5db; background:linear-gradient(135deg,rgba(14,165,233,.13),rgba(99,102,241,.14)); border-color:rgba(14,165,233,.28); } .sfx-studio-pill { color:#e0f2fe; background:#164e63; } .sfx-studio-mini { color:#9ca3af; } }
     `;
@@ -67,7 +69,7 @@
     const grid = document.querySelector('#view-sfxMaker .sfx-control-grid');
     if (!grid || $('sfxStudioEngine')) return;
     grid.prepend(
-      el(`<div class="sfx-studio-note"><b>Studio Engine</b> — UI는 이 파일이 담당하고, 실제 재생/다운로드는 엔진 코어 하나만 담당합니다.<div id="sfxStudioPresetPills" class="sfx-studio-pill-row"></div></div>`),
+      el(`<div class="sfx-studio-note"><b>Studio Engine</b> — 한 번만 초기화되는 안전 UI입니다. 실제 재생/다운로드는 엔진 코어 하나만 담당합니다.<div id="sfxStudioPresetPills" class="sfx-studio-pill-row"></div></div>`),
       el(`<div class="sfx-studio-mode-row"><div class="sfx-control"><label>엔진</label><select id="sfxStudioEngine"><option value="pro" selected>Pro Texture</option><option value="clean">Clean Digital</option><option value="impact">Impact Design</option><option value="air">Air / Whoosh</option></select><div class="sfx-studio-mini">합성 경로를 선택합니다.</div></div><div class="sfx-control"><label>질감</label><select id="sfxStudioTexture"><option value="auto" selected>Auto</option><option value="clean">Clean</option><option value="glass">Glass</option><option value="bell">Soft Bell</option><option value="impact">Impact</option><option value="whoosh">Whoosh</option><option value="hybrid">Hybrid</option></select><div class="sfx-studio-mini">파형/프리셋별 질감입니다.</div></div></div>`),
       range('sfxStudioDepth', '레이어 깊이', 0.78),
       range('sfxStudioBody', '바디', 0.46),
@@ -137,19 +139,38 @@
     });
   }
 
-  function install() {
-    ensureStyle();
-    addWaveforms();
-    addStudioControls();
-    buildConsole();
-    buildTabs();
-    syncOutputs();
+  function installOnce() {
+    if (installed) return true;
+    const view = $('view-sfxMaker');
+    const grid = document.querySelector('#view-sfxMaker .sfx-control-grid');
+    if (!view || !grid || !window.SFXStudioPresets) return false;
+    installed = true;
+    try {
+      ensureStyle();
+      addWaveforms();
+      addStudioControls();
+      buildConsole();
+      buildTabs();
+      syncOutputs();
+      document.addEventListener('input', syncOutputs);
+      document.addEventListener('change', syncOutputs);
+      window.dispatchEvent(new CustomEvent('sfx:studio-ui-ready'));
+    } catch (error) {
+      installed = false;
+      console.error('[sfx-ui-studio] init failed', error);
+    }
+    return installed;
   }
 
-  const observer = new MutationObserver(install);
-  observer.observe(document.body, { childList: true, subtree: true });
-  document.addEventListener('input', syncOutputs);
-  document.addEventListener('change', syncOutputs);
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install);
-  else install();
+  function waitForBase(tries = 0) {
+    if (installOnce()) return;
+    if (tries >= MAX_TRIES) {
+      console.warn('[sfx-ui-studio] base UI not ready; skipped');
+      return;
+    }
+    window.setTimeout(() => waitForBase(tries + 1), 50);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => waitForBase());
+  else waitForBase();
 })();
