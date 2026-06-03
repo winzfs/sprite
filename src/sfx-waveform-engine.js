@@ -2,12 +2,6 @@
   let installed = false;
 
   function $(id) { return document.getElementById(id); }
-  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
-  function lerp(a, b, t) { return a + (b - a) * t; }
-  function readNum(id, fallback) {
-    const value = Number.parseFloat($(id)?.value || String(fallback));
-    return Number.isFinite(value) ? value : fallback;
-  }
 
   function waveformProfile(wave) {
     const profiles = {
@@ -47,6 +41,7 @@
     set('sfxAir', profile.air);
     set('sfxNoise', profile.noise);
     set('sfxFilter', profile.filter);
+    document.dispatchEvent(new CustomEvent('sfx:waveform-profile-applied', { detail: { wave, profile } }));
     if (preview) $('sfxPreviewButton')?.click();
   }
 
@@ -54,6 +49,8 @@
     const element = $(id);
     if (!element) return;
     element.value = String(value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function bindWaveSelect() {
