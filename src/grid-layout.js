@@ -40,6 +40,11 @@ function loadBackgroundRemoverHelpers() {
   loadScriptOnce('src/background-remover-restore-brush.js?v=1', 'background-remover-restore-brush');
 }
 
+function loadMediaToolHelpers() {
+  loadBackgroundRemoverHelpers();
+  loadScriptOnce('src/pixel-art-converter.js?v=1', 'pixel-art-converter');
+}
+
 function bindFixedFrameGrids() {
   const sourceColsInput = document.getElementById('sourceColsInput');
   const frameList = document.getElementById('frameList');
@@ -67,7 +72,7 @@ function bindFixedFrameGrids() {
   });
 
   applyFixedFrameGrids();
-  loadBackgroundRemoverHelpers();
+  loadMediaToolHelpers();
 }
 
 if (document.readyState === 'loading') {
