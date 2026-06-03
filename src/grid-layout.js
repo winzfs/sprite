@@ -27,24 +27,33 @@ function applyFixedFrameGrids() {
 }
 
 function loadScriptOnce(src, dataKey) {
-  if (document.querySelector(`script[data-${dataKey}="true"]`)) return;
-  const script = document.createElement('script');
-  script.src = src;
-  script.defer = true;
-  script.dataset[dataKey.replace(/-([a-z])/g, (_, char) => char.toUpperCase())] = 'true';
-  document.body.append(script);
+  return new Promise((resolve) => {
+    const existing = document.querySelector(`script[data-${dataKey}="true"]`);
+    if (existing) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.dataset[dataKey.replace(/-([a-z])/g, (_, char) => char.toUpperCase())] = 'true';
+    script.onload = () => resolve();
+    script.onerror = () => resolve();
+    document.body.append(script);
+  });
 }
 
 function loadBackgroundRemoverHelpers() {
-  loadScriptOnce('src/background-remover-autopan.js?v=2', 'background-remover-autopan');
-  loadScriptOnce('src/background-remover-restore-brush.js?v=1', 'background-remover-restore-brush');
+  return Promise.resolve()
+    .then(() => loadScriptOnce('src/background-remover-autopan.js?v=2', 'background-remover-autopan'))
+    .then(() => loadScriptOnce('src/background-remover-restore-brush.js?v=1', 'background-remover-restore-brush'));
 }
 
 function loadMediaToolHelpers() {
-  loadBackgroundRemoverHelpers();
-  loadScriptOnce('src/pixel-art-converter.js?v=1', 'pixel-art-converter');
-  loadScriptOnce('src/pixel-art-unified-modes.js?v=1', 'pixel-art-unified-modes');
-  loadScriptOnce('src/pixel-art-floating-controls.js?v=4', 'pixel-art-floating-controls');
+  loadBackgroundRemoverHelpers()
+    .then(() => loadScriptOnce('src/pixel-art-converter.js?v=1', 'pixel-art-converter'))
+    .then(() => loadScriptOnce('src/pixel-art-unified-modes.js?v=2', 'pixel-art-unified-modes'))
+    .then(() => loadScriptOnce('src/pixel-art-floating-controls.js?v=5', 'pixel-art-floating-controls'));
 }
 
 function bindFixedFrameGrids() {
