@@ -1,8 +1,8 @@
 (() => {
   const WRAP_IDS = ['bgRemoveOriginalWrap', 'bgRemoveResultWrap'];
-  const CANVAS_IDS = ['bgRemoveOriginalCanvas', 'bgRemoveResultCanvas'];
   const MIN_ZOOM = 1;
-  const MAX_ZOOM = 24;
+  const MAX_ZOOM = 32;
+  let currentZoom = 1;
 
   function getElement(id) {
     return document.getElementById(id);
@@ -13,6 +13,29 @@
       { wrap: getElement('bgRemoveOriginalWrap'), canvas: getElement('bgRemoveOriginalCanvas') },
       { wrap: getElement('bgRemoveResultWrap'), canvas: getElement('bgRemoveResultCanvas') },
     ];
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function ensureZoomLayer(wrap, canvas) {
+    if (!wrap || !canvas) return null;
+    let layer = canvas.parentElement?.dataset?.bgZoomLayer === 'true' ? canvas.parentElement : null;
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.dataset.bgZoomLayer = 'true';
+      layer.style.position = 'relative';
+      layer.style.display = 'block';
+      layer.style.width = `${canvas.width || 1}px`;
+      layer.style.height = `${canvas.height || 1}px`;
+      layer.style.minWidth = '0';
+      layer.style.minHeight = '0';
+      layer.style.transform = 'translateZ(0)';
+      wrap.insertBefore(layer, canvas);
+      layer.append(canvas);
+    }
+    return layer;
   }
 
   function applyViewportFixes() {
@@ -29,7 +52,10 @@
     });
 
     const zoomInput = getElement('bgRemovePreviewZoom');
-    if (zoomInput) zoomInput.max = String(MAX_ZOOM);
+    if (zoomInput) {
+      zoomInput.max = String(MAX_ZOOM);
+      zoomInput.step = '0.1';
+    }
 
     pairList().forEach(({ wrap, canvas }) => {
       if (!wrap) return;
@@ -55,22 +81,21 @@
       wrap.style.cursor = 'grab';
 
       if (canvas) {
+        const layer = ensureZoomLayer(wrap, canvas);
         canvas.style.display = 'block';
         canvas.style.maxWidth = 'none';
-        canvas.style.flex = '0 0 auto';
+        canvas.style.width = `${canvas.width || 1}px`;
+        canvas.style.height = `${canvas.height || 1}px`;
+        canvas.style.transformOrigin = '0 0';
+        canvas.style.imageRendering = currentZoom > 1 ? 'pixelated' : 'auto';
+        canvas.style.touchAction = 'none';
+        if (layer) {
+          layer.style.width = `${(canvas.width || 1) * currentZoom}px`;
+          layer.style.height = `${(canvas.height || 1) * currentZoom}px`;
+        }
+        canvas.style.transform = `scale(${currentZoom})`;
       }
     });
-  }
-
-  function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-  }
-
-  function getZoom(canvas) {
-    if (!canvas?.width) return 1;
-    const cssWidth = Number.parseFloat(canvas.style.width || '0');
-    if (!Number.isFinite(cssWidth) || cssWidth <= 0) return 1;
-    return cssWidth / canvas.width;
   }
 
   function setSliderZoomValue(zoom) {
@@ -85,26 +110,51 @@
     if (zoomText) zoomText.value = `${rounded}x`;
   }
 
-  function setZoomForWrap(wrap, canvas, nextZoom, anchorClient) {
-    if (!wrap || !canvas || !canvas.width || !canvas.height) return;
-    const oldZoom = getZoom(canvas);
+  function getAnchorImagePoint(wrap, anchorClient) {
     const rect = wrap.getBoundingClientRect();
     const localX = anchorClient ? anchorClient.clientX - rect.left : wrap.clientWidth / 2;
     const localY = anchorClient ? anchorClient.clientY - rect.top : wrap.clientHeight / 2;
-    const anchorImageX = (wrap.scrollLeft + localX) / Math.max(0.001, oldZoom);
-    const anchorImageY = (wrap.scrollTop + localY) / Math.max(0.001, oldZoom);
+    return {
+      localX,
+      localY,
+      imageX: (wrap.scrollLeft + localX) / Math.max(0.001, currentZoom),
+      imageY: (wrap.scrollTop + localY) / Math.max(0.001, currentZoom),
+    };
+  }
 
-    canvas.style.width = `${canvas.width * nextZoom}px`;
-    canvas.style.height = `${canvas.height * nextZoom}px`;
+  function applyZoomToWrap(wrap, canvas, nextZoom, anchorClient) {
+    if (!wrap || !canvas || !canvas.width || !canvas.height) return;
+    const anchor = getAnchorImagePoint(wrap, anchorClient);
+    const layer = ensureZoomLayer(wrap, canvas);
+
+    canvas.style.width = `${canvas.width}px`;
+    canvas.style.height = `${canvas.height}px`;
     canvas.style.maxWidth = 'none';
+    canvas.style.transformOrigin = '0 0';
+    canvas.style.transform = `scale(${nextZoom})`;
     canvas.style.imageRendering = nextZoom > 1 ? 'pixelated' : 'auto';
 
-    wrap.scrollLeft = clamp(anchorImageX * nextZoom - localX, 0, Math.max(0, wrap.scrollWidth - wrap.clientWidth));
-    wrap.scrollTop = clamp(anchorImageY * nextZoom - localY, 0, Math.max(0, wrap.scrollHeight - wrap.clientHeight));
+    if (layer) {
+      layer.style.width = `${canvas.width * nextZoom}px`;
+      layer.style.height = `${canvas.height * nextZoom}px`;
+    }
+
+    wrap.scrollLeft = clamp(
+      anchor.imageX * nextZoom - anchor.localX,
+      0,
+      Math.max(0, wrap.scrollWidth - wrap.clientWidth),
+    );
+    wrap.scrollTop = clamp(
+      anchor.imageY * nextZoom - anchor.localY,
+      0,
+      Math.max(0, wrap.scrollHeight - wrap.clientHeight),
+    );
   }
 
   function setZoom(zoom, anchorMapOrPoint) {
     const nextZoom = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+    const previousZoom = currentZoom;
+    currentZoom = nextZoom;
     setSliderZoomValue(nextZoom);
 
     pairList().forEach(({ wrap, canvas }) => {
@@ -112,7 +162,9 @@
       const anchor = anchorMapOrPoint instanceof Map
         ? anchorMapOrPoint.get(wrap.id)
         : anchorMapOrPoint;
-      setZoomForWrap(wrap, canvas, nextZoom, anchor);
+      currentZoom = previousZoom;
+      applyZoomToWrap(wrap, canvas, nextZoom, anchor);
+      currentZoom = nextZoom;
     });
   }
 
@@ -146,22 +198,19 @@
     if (!wrap || !canvas || !bounds) return;
     applyViewportFixes();
 
-    const zoom = getZoom(canvas);
-    const left = bounds.minX * zoom;
-    const right = (bounds.maxX + 1) * zoom;
-    const top = bounds.minY * zoom;
-    const bottom = (bounds.maxY + 1) * zoom;
+    const left = bounds.minX * currentZoom;
+    const right = (bounds.maxX + 1) * currentZoom;
+    const top = bounds.minY * currentZoom;
+    const bottom = (bounds.maxY + 1) * currentZoom;
     const objectWidth = Math.max(1, right - left);
     const objectHeight = Math.max(1, bottom - top);
 
-    let targetLeft;
-    let targetTop;
-
-    if (objectWidth <= wrap.clientWidth) targetLeft = left - Math.max(16, (wrap.clientWidth - objectWidth) / 2);
-    else targetLeft = left;
-
-    if (objectHeight <= wrap.clientHeight) targetTop = top - Math.max(16, (wrap.clientHeight - objectHeight) / 2);
-    else targetTop = top;
+    const targetLeft = objectWidth <= wrap.clientWidth
+      ? left - Math.max(16, (wrap.clientWidth - objectWidth) / 2)
+      : left;
+    const targetTop = objectHeight <= wrap.clientHeight
+      ? top - Math.max(16, (wrap.clientHeight - objectHeight) / 2)
+      : top;
 
     wrap.scrollLeft = clamp(targetLeft, 0, Math.max(0, wrap.scrollWidth - wrap.clientWidth));
     wrap.scrollTop = clamp(targetTop, 0, Math.max(0, wrap.scrollHeight - wrap.clientHeight));
@@ -241,7 +290,7 @@
     function startPinch() {
       const [a, b] = Array.from(pointers.values()).slice(0, 2);
       pinchStartDistance = Math.max(1, distance(a, b));
-      pinchStartZoom = getZoom(getElement('bgRemoveOriginalCanvas')) || 1;
+      pinchStartZoom = currentZoom || 1;
       activeDragId = null;
       wrap.dataset.dragMoved = 'true';
     }
@@ -297,10 +346,6 @@
       pointers.delete(event.pointerId);
       if (pointers.size >= 2) startPinch();
 
-      if (pointers.size < 2) {
-        pinchStartDistance = 0;
-      }
-
       if (activeDragId === event.pointerId) resetDrag();
 
       if (pointers.size === 1) {
@@ -331,7 +376,6 @@
     getElement('bgRemovePreviewZoom')?.addEventListener('input', () => {
       const value = Number.parseFloat(getElement('bgRemovePreviewZoom')?.value || '1');
       setZoom(Number.isFinite(value) ? value : 1);
-      scheduleAutoPan(80);
     });
     getElement('bgRemoveResetViewButton')?.addEventListener('click', () => scheduleAutoPan(0));
 
@@ -342,7 +386,10 @@
   }
 
   function install() {
+    currentZoom = Number.parseFloat(getElement('bgRemovePreviewZoom')?.value || '1') || 1;
+    currentZoom = clamp(currentZoom, MIN_ZOOM, MAX_ZOOM);
     applyViewportFixes();
+    setSliderZoomValue(currentZoom);
     WRAP_IDS.forEach((id) => installTouchPanAndPinch(getElement(id)));
     bindControls();
 
