@@ -6,6 +6,57 @@
     return document.getElementById(id);
   }
 
+  function pairList() {
+    return [
+      { wrap: getElement('bgRemoveOriginalWrap'), canvas: getElement('bgRemoveOriginalCanvas') },
+      { wrap: getElement('bgRemoveResultWrap'), canvas: getElement('bgRemoveResultCanvas') },
+    ];
+  }
+
+  function applyViewportFixes() {
+    const view = getElement('view-backgroundRemover');
+    if (view) {
+      view.style.minWidth = '0';
+      view.style.maxWidth = '100%';
+      view.style.overflowX = 'hidden';
+    }
+
+    view?.querySelectorAll('.grid-2, .panel, .panel-body, .controls').forEach((element) => {
+      element.style.minWidth = '0';
+      element.style.maxWidth = '100%';
+    });
+
+    pairList().forEach(({ wrap, canvas }) => {
+      if (!wrap) return;
+      const parent = wrap.parentElement;
+      if (parent) {
+        parent.style.minWidth = '0';
+        parent.style.maxWidth = '100%';
+        parent.style.overflow = 'hidden';
+      }
+
+      wrap.style.display = 'block';
+      wrap.style.width = '100%';
+      wrap.style.maxWidth = '100%';
+      wrap.style.minWidth = '0';
+      wrap.style.boxSizing = 'border-box';
+      wrap.style.overflow = 'auto';
+      wrap.style.overflowX = 'auto';
+      wrap.style.overflowY = 'auto';
+      wrap.style.webkitOverflowScrolling = 'touch';
+      wrap.style.touchAction = 'none';
+      wrap.style.userSelect = 'none';
+      wrap.style.overscrollBehavior = 'contain';
+      wrap.style.cursor = 'grab';
+
+      if (canvas) {
+        canvas.style.display = 'block';
+        canvas.style.maxWidth = 'none';
+        canvas.style.flex = '0 0 auto';
+      }
+    });
+  }
+
   function getZoom(canvas) {
     if (!canvas?.width) return 1;
     const cssWidth = Number.parseFloat(canvas.style.width || '0');
@@ -45,11 +96,30 @@
 
   function scrollWrapToBounds(wrap, canvas, bounds) {
     if (!wrap || !canvas || !bounds) return;
+    applyViewportFixes();
+
     const zoom = getZoom(canvas);
-    const centerX = ((bounds.minX + bounds.maxX + 1) / 2) * zoom;
-    const centerY = ((bounds.minY + bounds.maxY + 1) / 2) * zoom;
-    const targetLeft = centerX - wrap.clientWidth / 2;
-    const targetTop = centerY - wrap.clientHeight / 2;
+    const left = bounds.minX * zoom;
+    const right = (bounds.maxX + 1) * zoom;
+    const top = bounds.minY * zoom;
+    const bottom = (bounds.maxY + 1) * zoom;
+    const objectWidth = Math.max(1, right - left);
+    const objectHeight = Math.max(1, bottom - top);
+
+    let targetLeft;
+    let targetTop;
+
+    if (objectWidth <= wrap.clientWidth) {
+      targetLeft = left - Math.max(16, (wrap.clientWidth - objectWidth) / 2);
+    } else {
+      targetLeft = left;
+    }
+
+    if (objectHeight <= wrap.clientHeight) {
+      targetTop = top - Math.max(16, (wrap.clientHeight - objectHeight) / 2);
+    } else {
+      targetTop = top;
+    }
 
     wrap.scrollLeft = clamp(targetLeft, 0, Math.max(0, wrap.scrollWidth - wrap.clientWidth));
     wrap.scrollTop = clamp(targetTop, 0, Math.max(0, wrap.scrollHeight - wrap.clientHeight));
@@ -65,6 +135,7 @@
   }
 
   function autoPanAll() {
+    applyViewportFixes();
     autoPanOne('bgRemoveOriginalWrap', 'bgRemoveOriginalCanvas');
     autoPanOne('bgRemoveResultWrap', 'bgRemoveResultCanvas');
   }
@@ -72,6 +143,7 @@
   function scheduleAutoPan(delay = 80) {
     window.setTimeout(autoPanAll, delay);
     window.setTimeout(autoPanAll, delay + 180);
+    window.setTimeout(autoPanAll, delay + 500);
   }
 
   function installMoreNaturalDrag(wrap) {
@@ -98,7 +170,8 @@
       wrap.dataset.dragMoved = 'false';
       wrap.style.cursor = 'grabbing';
       wrap.setPointerCapture?.(event.pointerId);
-    });
+      event.preventDefault();
+    }, { passive: false });
 
     wrap.addEventListener('pointermove', (event) => {
       if (!active || event.pointerId !== pointerId) return;
@@ -109,7 +182,7 @@
       wrap.scrollTop = startScrollTop - dy;
       event.preventDefault();
       event.stopPropagation();
-    });
+    }, { passive: false });
 
     const stop = (event) => {
       if (!active || event.pointerId !== pointerId) return;
@@ -126,9 +199,7 @@
     wrap.addEventListener('pointercancel', stop);
   }
 
-  function install() {
-    WRAP_IDS.forEach((id) => installMoreNaturalDrag(getElement(id)));
-
+  function bindControls() {
     getElement('bgRemoveInput')?.addEventListener('change', () => scheduleAutoPan(160));
     getElement('bgRemoveApplyButton')?.addEventListener('click', () => scheduleAutoPan(120));
     getElement('bgRemovePreviewZoom')?.addEventListener('input', () => scheduleAutoPan(80));
@@ -138,14 +209,22 @@
       getElement(id)?.addEventListener('input', () => scheduleAutoPan(140));
       getElement(id)?.addEventListener('change', () => scheduleAutoPan(140));
     });
+  }
+
+  function install() {
+    applyViewportFixes();
+    WRAP_IDS.forEach((id) => installMoreNaturalDrag(getElement(id)));
+    bindControls();
 
     const observer = new MutationObserver(() => {
+      applyViewportFixes();
       if (getElement('bgRemoveOriginalWrap') && getElement('bgRemoveResultWrap')) {
         WRAP_IDS.forEach((id) => installMoreNaturalDrag(getElement(id)));
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
+    window.addEventListener('resize', () => scheduleAutoPan(60));
     scheduleAutoPan(300);
   }
 
