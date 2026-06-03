@@ -43,6 +43,7 @@ function loadBackgroundRemoverHelpers() {
 function loadMediaToolHelpers() {
   loadBackgroundRemoverHelpers();
   loadScriptOnce('src/pixel-art-converter.js?v=1', 'pixel-art-converter');
+  loadScriptOnce('src/pixel-art-smart-detail.js?v=1', 'pixel-art-smart-detail');
 }
 
 function bindFixedFrameGrids() {
