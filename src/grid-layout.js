@@ -59,7 +59,8 @@ function loadMediaToolHelpers() {
     .then(() => loadScriptOnce('src/sfx-ui-studio.js?v=2', 'sfx-ui-studio'))
     .then(() => loadScriptOnce('src/sfx-engine-core.js?v=2', 'sfx-engine-core'))
     .then(() => loadScriptOnce('src/sfx-ui-polish.js?v=1', 'sfx-ui-polish'))
-    .then(() => loadScriptOnce('src/sfx-ui-pro-browser.js?v=1', 'sfx-ui-pro-browser'));
+    .then(() => loadScriptOnce('src/sfx-ui-pro-browser.js?v=1', 'sfx-ui-pro-browser'))
+    .then(() => loadScriptOnce('src/sfx-ui-console.js?v=1', 'sfx-ui-console'));
 }
 
 function bindFixedFrameGrids() {
