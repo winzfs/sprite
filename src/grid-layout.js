@@ -53,7 +53,8 @@ function loadMediaToolHelpers() {
   loadBackgroundRemoverHelpers()
     .then(() => loadScriptOnce('src/pixel-art-converter.js?v=1', 'pixel-art-converter'))
     .then(() => loadScriptOnce('src/pixel-art-unified-modes.js?v=2', 'pixel-art-unified-modes'))
-    .then(() => loadScriptOnce('src/pixel-art-floating-controls.js?v=5', 'pixel-art-floating-controls'));
+    .then(() => loadScriptOnce('src/pixel-art-floating-controls.js?v=5', 'pixel-art-floating-controls'))
+    .then(() => loadScriptOnce('src/sfx-maker.js?v=1', 'sfx-maker'));
 }
 
 function bindFixedFrameGrids() {
