@@ -2,7 +2,7 @@
   const WRAP_IDS = ['bgRemoveOriginalWrap', 'bgRemoveResultWrap'];
   const CANVAS_IDS = ['bgRemoveOriginalCanvas', 'bgRemoveResultCanvas'];
   const MIN_ZOOM = 1;
-  const MAX_ZOOM = 8;
+  const MAX_ZOOM = 24;
 
   function getElement(id) {
     return document.getElementById(id);
@@ -27,6 +27,9 @@
       element.style.minWidth = '0';
       element.style.maxWidth = '100%';
     });
+
+    const zoomInput = getElement('bgRemovePreviewZoom');
+    if (zoomInput) zoomInput.max = String(MAX_ZOOM);
 
     pairList().forEach(({ wrap, canvas }) => {
       if (!wrap) return;
@@ -70,29 +73,46 @@
     return cssWidth / canvas.width;
   }
 
-  function setZoom(zoom, anchor) {
-    const nextZoom = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+  function setSliderZoomValue(zoom) {
+    const rounded = Math.round(zoom * 10) / 10;
     const zoomInput = getElement('bgRemovePreviewZoom');
     const zoomText = getElement('bgRemovePreviewZoomText');
-    if (zoomInput) zoomInput.value = String(Math.round(nextZoom));
-    if (zoomText) zoomText.value = `${Math.round(nextZoom)}x`;
+    if (zoomInput) {
+      zoomInput.max = String(MAX_ZOOM);
+      zoomInput.step = '0.1';
+      zoomInput.value = String(rounded);
+    }
+    if (zoomText) zoomText.value = `${rounded}x`;
+  }
+
+  function setZoomForWrap(wrap, canvas, nextZoom, anchorClient) {
+    if (!wrap || !canvas || !canvas.width || !canvas.height) return;
+    const oldZoom = getZoom(canvas);
+    const rect = wrap.getBoundingClientRect();
+    const localX = anchorClient ? anchorClient.clientX - rect.left : wrap.clientWidth / 2;
+    const localY = anchorClient ? anchorClient.clientY - rect.top : wrap.clientHeight / 2;
+    const anchorImageX = (wrap.scrollLeft + localX) / Math.max(0.001, oldZoom);
+    const anchorImageY = (wrap.scrollTop + localY) / Math.max(0.001, oldZoom);
+
+    canvas.style.width = `${canvas.width * nextZoom}px`;
+    canvas.style.height = `${canvas.height * nextZoom}px`;
+    canvas.style.maxWidth = 'none';
+    canvas.style.imageRendering = nextZoom > 1 ? 'pixelated' : 'auto';
+
+    wrap.scrollLeft = clamp(anchorImageX * nextZoom - localX, 0, Math.max(0, wrap.scrollWidth - wrap.clientWidth));
+    wrap.scrollTop = clamp(anchorImageY * nextZoom - localY, 0, Math.max(0, wrap.scrollHeight - wrap.clientHeight));
+  }
+
+  function setZoom(zoom, anchorMapOrPoint) {
+    const nextZoom = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+    setSliderZoomValue(nextZoom);
 
     pairList().forEach(({ wrap, canvas }) => {
-      if (!wrap || !canvas || !canvas.width || !canvas.height) return;
-      const oldZoom = getZoom(canvas);
-      const rect = wrap.getBoundingClientRect();
-      const localX = anchor ? anchor.clientX - rect.left : wrap.clientWidth / 2;
-      const localY = anchor ? anchor.clientY - rect.top : wrap.clientHeight / 2;
-      const imageX = (wrap.scrollLeft + localX) / Math.max(0.001, oldZoom);
-      const imageY = (wrap.scrollTop + localY) / Math.max(0.001, oldZoom);
-
-      canvas.style.width = `${canvas.width * nextZoom}px`;
-      canvas.style.height = `${canvas.height * nextZoom}px`;
-      canvas.style.maxWidth = 'none';
-      canvas.style.imageRendering = nextZoom > 1 ? 'pixelated' : 'auto';
-
-      wrap.scrollLeft = clamp(imageX * nextZoom - localX, 0, Math.max(0, wrap.scrollWidth - wrap.clientWidth));
-      wrap.scrollTop = clamp(imageY * nextZoom - localY, 0, Math.max(0, wrap.scrollHeight - wrap.clientHeight));
+      if (!wrap || !canvas) return;
+      const anchor = anchorMapOrPoint instanceof Map
+        ? anchorMapOrPoint.get(wrap.id)
+        : anchorMapOrPoint;
+      setZoomForWrap(wrap, canvas, nextZoom, anchor);
     });
   }
 
@@ -181,6 +201,23 @@
     };
   }
 
+  function makeAnchorMap(activeWrap, anchorOnActiveWrap) {
+    const anchors = new Map();
+    pairList().forEach(({ wrap }) => {
+      if (!wrap) return;
+      if (wrap === activeWrap) {
+        anchors.set(wrap.id, anchorOnActiveWrap);
+        return;
+      }
+      const rect = wrap.getBoundingClientRect();
+      anchors.set(wrap.id, {
+        clientX: rect.left + wrap.clientWidth / 2,
+        clientY: rect.top + wrap.clientHeight / 2,
+      });
+    });
+    return anchors;
+  }
+
   function installTouchPanAndPinch(wrap) {
     if (!wrap || wrap.dataset.autoPanDragBound === 'true') return;
     wrap.dataset.autoPanDragBound = 'true';
@@ -195,11 +232,18 @@
     let startScrollTop = 0;
     let pinchStartDistance = 0;
     let pinchStartZoom = 1;
-    let pinchAnchor = null;
 
     function resetDrag() {
       activeDragId = null;
       wrap.style.cursor = 'grab';
+    }
+
+    function startPinch() {
+      const [a, b] = Array.from(pointers.values()).slice(0, 2);
+      pinchStartDistance = Math.max(1, distance(a, b));
+      pinchStartZoom = getZoom(getElement('bgRemoveOriginalCanvas')) || 1;
+      activeDragId = null;
+      wrap.dataset.dragMoved = 'true';
     }
 
     wrap.addEventListener('pointerdown', (event) => {
@@ -216,12 +260,7 @@
         startScrollTop = wrap.scrollTop;
         wrap.style.cursor = 'grabbing';
       } else if (pointers.size >= 2) {
-        const [a, b] = Array.from(pointers.values()).slice(0, 2);
-        pinchStartDistance = Math.max(1, distance(a, b));
-        pinchStartZoom = getZoom(getElement('bgRemoveOriginalCanvas')) || 1;
-        pinchAnchor = midpoint(a, b);
-        activeDragId = null;
-        wrap.dataset.dragMoved = 'true';
+        startPinch();
       }
 
       event.preventDefault();
@@ -234,9 +273,9 @@
       if (pointers.size >= 2) {
         const [a, b] = Array.from(pointers.values()).slice(0, 2);
         const nextDistance = Math.max(1, distance(a, b));
-        const anchor = midpoint(a, b);
+        const activeAnchor = midpoint(a, b);
         const nextZoom = pinchStartZoom * (nextDistance / Math.max(1, pinchStartDistance));
-        setZoom(nextZoom, anchor || pinchAnchor);
+        setZoom(nextZoom, makeAnchorMap(wrap, activeAnchor));
         wrap.dataset.dragMoved = 'true';
         event.preventDefault();
         event.stopPropagation();
@@ -256,9 +295,10 @@
 
     const stopPointer = (event) => {
       pointers.delete(event.pointerId);
+      if (pointers.size >= 2) startPinch();
+
       if (pointers.size < 2) {
         pinchStartDistance = 0;
-        pinchAnchor = null;
       }
 
       if (activeDragId === event.pointerId) resetDrag();
@@ -289,7 +329,7 @@
     getElement('bgRemoveInput')?.addEventListener('change', () => scheduleAutoPan(160));
     getElement('bgRemoveApplyButton')?.addEventListener('click', () => scheduleAutoPan(120));
     getElement('bgRemovePreviewZoom')?.addEventListener('input', () => {
-      const value = Number.parseInt(getElement('bgRemovePreviewZoom')?.value || '1', 10);
+      const value = Number.parseFloat(getElement('bgRemovePreviewZoom')?.value || '1');
       setZoom(Number.isFinite(value) ? value : 1);
       scheduleAutoPan(80);
     });
