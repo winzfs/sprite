@@ -16,7 +16,7 @@ function applyFixedFrameGrids() {
   gridState.sourceCols = readPositiveIntById('sourceColsInput', gridState.sourceCols);
 
   if (frameList) {
-    frameList.style.gridTemplateColumns = `repeat(${gridState.sourceCols}, minmax(0, 1fr)`;
+    frameList.style.gridTemplateColumns = `repeat(${gridState.sourceCols}, minmax(0, 1fr))`;
     frameList.dataset.cols = String(gridState.sourceCols);
   }
 
