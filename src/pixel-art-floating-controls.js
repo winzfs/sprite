@@ -9,6 +9,9 @@
     { id: 'pixelArtColors', label: '색상 수', type: 'range' },
     { id: 'pixelArtShapePreserve', label: '원형 보존', type: 'range' },
     { id: 'pixelArtDetailPower', label: '디테일', type: 'range' },
+    { id: 'pixelArtMicroDetail', label: '미세 디테일', type: 'range' },
+    { id: 'pixelArtTonePattern', label: '명암 패턴', type: 'range' },
+    { id: 'pixelArtFeatureBoost', label: '특징점', type: 'range' },
     { id: 'pixelArtSharpness', label: '선명도', type: 'range' },
     { id: 'pixelArtShapeSimplify', label: '형태 단순화', type: 'range' },
     { id: 'pixelArtContrast', label: '대비', type: 'range' },
@@ -51,8 +54,8 @@
         bottom: 74px;
         z-index: 9999;
         display: none;
-        width: min(380px, calc(100vw - 28px));
-        max-height: min(72vh, 680px);
+        width: min(390px, calc(100vw - 28px));
+        max-height: min(76vh, 720px);
         overflow: auto;
         padding: 14px;
         border: 1px solid rgba(148, 163, 184, .35);
@@ -67,7 +70,7 @@
       .pixel-floating-title { font-weight:900; font-size:15px; color:#111827; }
       .pixel-floating-close { border:0; background:#111827; color:#fff; border-radius:999px; padding:6px 10px; font-weight:800; }
       .pixel-floating-grid { display:grid; grid-template-columns: 1fr; gap:10px; }
-      .pixel-floating-control { display:grid; grid-template-columns: 82px 1fr 48px; gap:8px; align-items:center; font-size:12px; color:#374151; }
+      .pixel-floating-control { display:grid; grid-template-columns: 88px 1fr 48px; gap:8px; align-items:center; font-size:12px; color:#374151; }
       .pixel-floating-control input[type="range"] { width:100%; }
       .pixel-floating-control input[type="number"] { width:100%; border:1px solid rgba(148,163,184,.5); border-radius:10px; padding:7px 8px; }
       .pixel-floating-value { text-align:right; font-variant-numeric: tabular-nums; color:#111827; font-weight:800; }
@@ -84,10 +87,10 @@
           right: 10px;
           bottom: 66px;
           width: auto;
-          max-height: 58vh;
+          max-height: 64vh;
           border-radius: 20px 20px 14px 14px;
         }
-        .pixel-floating-control { grid-template-columns: 78px 1fr 44px; }
+        .pixel-floating-control { grid-template-columns: 86px 1fr 44px; }
       }
       @media (prefers-color-scheme: dark) {
         #${PANEL_ID} { background: rgba(17, 24, 39, .94); border-color: rgba(75, 85, 99, .75); }
@@ -143,6 +146,9 @@
       input.value = source.value;
       value.textContent = source.value;
     });
+    const ultra = $('pixelFloatingUltra');
+    const sourceUltra = $('pixelArtUltraDetail');
+    if (ultra && sourceUltra) ultra.checked = sourceUltra.checked;
   }
 
   function copySelect(sourceId, targetId) {
@@ -178,6 +184,7 @@
         <select id="pixelFloatingDither"></select>
       </div>
       <label class="pixel-floating-check"><input id="pixelFloatingSmart" type="checkbox"> 스마트 원형 보존</label>
+      <label class="pixel-floating-check"><input id="pixelFloatingUltra" type="checkbox"> 초저해상도 디테일 압축</label>
       <label class="pixel-floating-check"><input id="pixelFloatingAuto" type="checkbox"> 자동 변환</label>
       <div class="pixel-floating-grid"></div>
       <div class="pixel-floating-actions">
@@ -200,8 +207,10 @@
     copySelect('pixelArtDither', 'pixelFloatingDither');
 
     const smart = $('pixelFloatingSmart');
+    const ultra = $('pixelFloatingUltra');
     const auto = $('pixelFloatingAuto');
     const sourceSmart = $('pixelArtSmartDetail');
+    const sourceUltra = $('pixelArtUltraDetail');
     const sourceAuto = $('pixelArtAutoRun');
     if (smart && sourceSmart) {
       smart.checked = sourceSmart.checked;
@@ -210,6 +219,14 @@
         sourceSmart.dispatchEvent(new Event('change', { bubbles: true }));
       });
       sourceSmart.addEventListener('change', () => { smart.checked = sourceSmart.checked; });
+    }
+    if (ultra && sourceUltra) {
+      ultra.checked = sourceUltra.checked;
+      ultra.addEventListener('change', () => {
+        sourceUltra.checked = ultra.checked;
+        sourceUltra.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      sourceUltra.addEventListener('change', () => { ultra.checked = sourceUltra.checked; });
     }
     if (auto && sourceAuto) {
       auto.checked = sourceAuto.checked;
@@ -245,23 +262,30 @@
     element.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function setSourceChecked(id, checked) {
+    const element = $(id);
+    if (!element) return;
+    element.checked = checked;
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function applyRecommended(size) {
     setSourceValue('pixelArtWidth', size);
     setSourceValue('pixelArtHeight', size);
-    setSourceValue('pixelArtColors', size <= 32 ? 56 : 88);
-    setSourceValue('pixelArtShapePreserve', size <= 32 ? 88 : 76);
+    setSourceValue('pixelArtColors', size <= 32 ? 64 : 96);
+    setSourceValue('pixelArtShapePreserve', size <= 32 ? 90 : 78);
     setSourceValue('pixelArtDetailPower', size <= 32 ? 42 : 46);
+    setSourceValue('pixelArtMicroDetail', size <= 32 ? 84 : 70);
+    setSourceValue('pixelArtTonePattern', size <= 32 ? 56 : 38);
+    setSourceValue('pixelArtFeatureBoost', size <= 32 ? 82 : 66);
     setSourceValue('pixelArtSharpness', size <= 32 ? 46 : 34);
     setSourceValue('pixelArtShapeSimplify', size <= 32 ? 34 : 22);
     setSourceValue('pixelArtContrast', size <= 32 ? 10 : 8);
     setSourceValue('pixelArtSaturation', size <= 32 ? 8 : 8);
     setSourceValue('pixelArtOutline', size <= 32 ? 14 : 10);
     setSourceValue('pixelArtScale', size <= 32 ? 14 : 8);
-    const smart = $('pixelArtSmartDetail');
-    if (smart) {
-      smart.checked = true;
-      smart.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    setSourceChecked('pixelArtSmartDetail', true);
+    setSourceChecked('pixelArtUltraDetail', true);
     syncFromSource();
     $('pixelArtRunButton')?.click();
   }
