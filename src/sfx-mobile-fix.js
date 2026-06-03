@@ -3,9 +3,13 @@
   const DRAGGING_CLASS = 'sfx-slider-dragging';
 
   function installStyle() {
-    document.getElementById(STYLE_ID)?.remove();
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
+    let style = document.getElementById(STYLE_ID);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = STYLE_ID;
+      document.head.append(style);
+    }
+
     style.textContent = `
       html, body { max-width:100%; overflow-x:hidden; }
       #view-sfxMaker, #view-sfxMaker * { box-sizing:border-box; }
@@ -102,13 +106,10 @@
         #view-sfxMaker .sfx-control-grid, #view-sfxMaker [class*='control-grid'], #view-sfxMaker [class*='rack'] { grid-template-columns:1fr !important; }
       }
     `;
-    document.head.append(style);
   }
 
   function normalizeRange(range) {
     range.removeAttribute('orient');
-    range.style.removeProperty('-webkit-appearance');
-    range.style.removeProperty('appearance');
     range.style.writingMode = 'horizontal-tb';
     range.style.transform = 'none';
     range.style.maxWidth = '100%';
@@ -141,7 +142,6 @@
   window.addEventListener('blur', () => document.body.classList.remove(DRAGGING_CLASS));
 
   const observer = new MutationObserver((mutations) => {
-    installStyle();
     mutations.forEach((mutation) => {
       mutation.addedNodes.forEach((node) => {
         if (node.nodeType !== Node.ELEMENT_NODE) return;
