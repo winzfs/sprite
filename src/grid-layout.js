@@ -55,7 +55,8 @@ function loadMediaToolHelpers() {
     .then(() => loadScriptOnce('src/pixel-art-unified-modes.js?v=2', 'pixel-art-unified-modes'))
     .then(() => loadScriptOnce('src/pixel-art-floating-controls.js?v=5', 'pixel-art-floating-controls'))
     .then(() => loadScriptOnce('src/sfx-maker.js?v=1', 'sfx-maker'))
-    .then(() => loadScriptOnce('src/sfx-pro-studio.js?v=1', 'sfx-pro-studio'));
+    .then(() => loadScriptOnce('src/sfx-pro-studio.js?v=1', 'sfx-pro-studio'))
+    .then(() => loadScriptOnce('src/sfx-mastering-studio.js?v=1', 'sfx-mastering-studio'));
 }
 
 function bindFixedFrameGrids() {
