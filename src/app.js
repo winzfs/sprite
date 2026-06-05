@@ -43,7 +43,11 @@ function stop() { state.isPlaying = false; window.clearTimeout(state.timerId); }
 function getFrame(id) { return state.frames.find((frame) => frame.id === id) || null; }
 function selectedFrameIds() { return Array.from(state.selectedFrameIds); }
 function getShift(frameId) { return state.frameShifts.get(frameId) || { x: 0, y: 0 }; }
-function setShift(frameId, shift) { if (shift.x === 0 && shift.y === 0) state.frameShifts.delete(frameId); else state.frameShifts.set(frameId, shift); }
+function setShift(frameId, shift) {
+  const normalized = { x: Math.round(shift.x || 0), y: Math.round(shift.y || 0) };
+  if (normalized.x === 0 && normalized.y === 0) state.frameShifts.delete(frameId);
+  else state.frameShifts.set(frameId, normalized);
+}
 function getBoxSize(frame) { const size = state.frameSizes.get(frame.id); return { w: size?.w || frame.w, h: size?.h || frame.h }; }
 function setBoxSize(frameId, size, baseFrame) {
   const w = Math.max(1, Math.round(size.w));
@@ -55,8 +59,8 @@ function setBoxSize(frameId, size, baseFrame) {
 function getSourceRect(frame) {
   const shift = getShift(frame.id);
   const size = getBoxSize(frame);
-  const sx = clamp(frame.sx + shift.x, 0, Math.max(0, state.image.naturalWidth - 1));
-  const sy = clamp(frame.sy + shift.y, 0, Math.max(0, state.image.naturalHeight - 1));
+  const sx = frame.sx + Math.round(shift.x || 0);
+  const sy = frame.sy + Math.round(shift.y || 0);
   return { sx, sy, w: size.w, h: size.h, shiftX: sx - frame.sx, shiftY: sy - frame.sy };
 }
 
@@ -67,25 +71,23 @@ function getFrameIntersection(rect) {
   const iy2 = clamp(rect.sy + rect.h, 0, state.image.naturalHeight);
   const iw = Math.max(0, ix2 - ix);
   const ih = Math.max(0, iy2 - iy);
-  return {
-    sx: ix,
-    sy: iy,
-    sw: iw,
-    sh: ih,
-    dx: ix - rect.sx,
-    dy: iy - rect.sy,
-  };
+  return { sx: ix, sy: iy, sw: iw, sh: ih, dx: ix - rect.sx, dy: iy - rect.sy };
 }
 
 function drawFrameImage(ctx, frame, dx, dy, scale = 1) {
   const rect = getSourceRect(frame);
   const part = getFrameIntersection(rect);
   if (part.sw <= 0 || part.sh <= 0) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(dx, dy, rect.w * scale, rect.h * scale);
+  ctx.clip();
   ctx.drawImage(
     state.image,
     part.sx, part.sy, part.sw, part.sh,
     dx + part.dx * scale, dy + part.dy * scale, part.sw * scale, part.sh * scale,
   );
+  ctx.restore();
 }
 
 function getActiveFrameIds() {
@@ -258,9 +260,7 @@ function nudgeSelectedFrames(dx, dy) {
   for (const id of ids) {
     const frame = getFrame(id); if (!frame) continue;
     const current = getShift(id);
-    const sx = clamp(frame.sx + current.x + dx, 0, Math.max(0, state.image.naturalWidth - 1));
-    const sy = clamp(frame.sy + current.y + dy, 0, Math.max(0, state.image.naturalHeight - 1));
-    setShift(id, { x: sx - frame.sx, y: sy - frame.sy });
+    setShift(id, { x: current.x + dx, y: current.y + dy });
   }
   const first = getFrame(ids[0]); renderOutput(); drawSource(); drawPreview(first); updateInfoDisplays(); setStatus(`${ids.length}개 위치 보정`);
 }
@@ -291,16 +291,17 @@ function alignSelectedFrames(horizontal, vertical) {
   for (const id of ids) { const frame = getFrame(id); if (!frame) continue; const bounds = detectOpaqueBounds(frame); if (!bounds) continue; const rect = getSourceRect(frame); let dx = 0, dy = 0; if (horizontal) dx = Math.round(rect.w / 2 - (bounds.minX + bounds.maxX + 1) / 2); if (vertical) dy = Math.round(rect.h / 2 - (bounds.minY + bounds.maxY + 1) / 2); if (dx || dy) { nudgeSingleFrame(id, dx, dy); changed++; } }
   const first = getFrame(ids[0]); renderOutput(); drawSource(); drawPreview(first); updateInfoDisplays(); setStatus(changed ? `${changed}개 프레임 가운데 정렬` : '정렬할 픽셀 영역을 찾지 못했거나 이미 가운데입니다.');
 }
-function nudgeSingleFrame(id, dx, dy) { const frame = getFrame(id); if (!frame) return; const current = getShift(id); const sx = clamp(frame.sx + current.x + dx, 0, Math.max(0, state.image.naturalWidth - 1)); const sy = clamp(frame.sy + current.y + dy, 0, Math.max(0, state.image.naturalHeight - 1)); setShift(id, { x: sx - frame.sx, y: sy - frame.sy }); }
+function nudgeSingleFrame(id, dx, dy) { const frame = getFrame(id); if (!frame) return; const current = getShift(id); setShift(id, { x: current.x + dx, y: current.y + dy }); }
 function moveOutput(from, to) { if (from < 0) from = state.selectedOutputIndex < 0 ? 0 : state.selectedOutputIndex; if (to < 0 || to >= state.outputFrameIds.length) return setStatus('더 이동할 수 없습니다.'); const [item] = state.outputFrameIds.splice(from, 1); state.outputFrameIds.splice(to, 0, item); state.selectedOutputIndex = to; renderOutput(); setStatus('출력 순서 이동'); }
 function play() { if (state.isPlaying || !state.outputFrameIds.length) return; state.isPlaying = true; setStatus('재생 중'); const tick = () => { if (!state.isPlaying) return; const index = state.playIndex % state.outputFrameIds.length; state.selectedOutputIndex = index; drawPreview(getFrame(state.outputFrameIds[index])); renderOutput(); state.playIndex++; state.timerId = setTimeout(tick, 1000 / Math.max(1, Math.min(60, readNumber(ui.fps, 8)))); }; tick(); }
 function exportPng() {
   if (!state.outputFrameIds.length) return setStatus('내보낼 프레임이 없습니다.');
   const cols = Math.max(1, Math.min(state.outputFrameIds.length, readNumber(ui.exportCols, readNumber(ui.cols, 6)))); const rows = Math.ceil(state.outputFrameIds.length / cols); const s = settings(); const padX = ui.keepSpacing?.checked ? s.ox : 0, padY = ui.keepSpacing?.checked ? s.oy : 0, gapX = ui.keepSpacing?.checked ? s.gx : 0, gapY = ui.keepSpacing?.checked ? s.gy : 0;
-  const cellW = Math.max(...state.outputFrameIds.map((id) => getSourceRect(getFrame(id)).w)); const cellH = Math.max(...state.outputFrameIds.map((id) => getSourceRect(getFrame(id)).h));
+  const validFrames = state.outputFrameIds.map((id) => getFrame(id)).filter(Boolean);
+  const cellW = Math.max(...validFrames.map((frame) => getSourceRect(frame).w)); const cellH = Math.max(...validFrames.map((frame) => getSourceRect(frame).h));
   const canvas = document.createElement('canvas'); canvas.width = padX * 2 + cellW * cols + gapX * Math.max(0, cols - 1); canvas.height = padY * 2 + cellH * rows + gapY * Math.max(0, rows - 1); const ctx = canvas.getContext('2d'); ctx.imageSmoothingEnabled = false;
   if (!ui.transparentBg?.checked) { ctx.fillStyle = ui.exportBg?.value || '#d9d9d9'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-  state.outputFrameIds.forEach((id, i) => { const frame = getFrame(id), rect = getSourceRect(frame); const x = padX + (i % cols) * (cellW + gapX), y = padY + Math.floor(i / cols) * (cellH + gapY); drawFrameImage(ctx, frame, x, y, 1); });
+  state.outputFrameIds.forEach((id, i) => { const frame = getFrame(id); if (!frame) return; const x = padX + (i % cols) * (cellW + gapX), y = padY + Math.floor(i / cols) * (cellH + gapY); drawFrameImage(ctx, frame, x, y, 1); });
   const link = document.createElement('a'); link.download = `sprite-sheet-${cols}x${rows}-${canvas.width}x${canvas.height}.png`; link.href = canvas.toDataURL('image/png'); document.body.append(link); link.click(); link.remove(); setStatus(`PNG 내보내기 완료: ${canvas.width}x${canvas.height}`);
 }
 function reset() { stop(); state.frames = []; state.frameShifts.clear(); state.frameSizes.clear(); state.selectedFrameIds.clear(); state.outputFrameIds = []; state.selectedOutputIndex = -1; renderFrames(); renderOutput(); drawPreview(null); drawSource(); updateInfoDisplays(); setStatus('초기화 완료'); }
@@ -318,4 +319,4 @@ function bind() {
   });
   ui.source.addEventListener('click', (event) => { if (!state.frames.length) return; const rect = ui.source.getBoundingClientRect(); const zoom = Math.max(1, readNumber(ui.zoom, 2)); const cssScaleX = ui.source.width / rect.width; const cssScaleY = ui.source.height / rect.height; const x = ((event.clientX - rect.left) * cssScaleX) / zoom; const y = ((event.clientY - rect.top) * cssScaleY) / zoom; const frame = state.frames.find((item) => { const r = getSourceRect(item); return x >= r.sx && x < r.sx + r.w && y >= r.sy && y < r.sy + r.h; }); if (frame) selectFrameId(frame.id, event.shiftKey || event.ctrlKey || event.metaKey); });
 }
-bind(); updateInfoDisplays(); setStatus('JS 연결 완료. 프레임 박스는 원본 밖으로도 확장되고 출력 크기도 함께 확장됩니다.');
+bind(); updateInfoDisplays(); setStatus('JS 연결 완료. 보정된 프레임 박스가 출력 미리보기와 내보내기에 직접 적용됩니다.');
