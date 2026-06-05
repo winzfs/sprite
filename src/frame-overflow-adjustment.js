@@ -1,20 +1,18 @@
 (() => {
-  function unrestrictedSourceRect(frame) {
-    const shift = getShift(frame.id);
+  function adjustedFrameRect(frame) {
     const size = getBoxSize(frame);
-    const sx = frame.sx + shift.x;
-    const sy = frame.sy + shift.y;
+    const shift = getShift(frame.id);
     return {
-      sx,
-      sy,
+      sx: frame.sx,
+      sy: frame.sy,
       w: size.w,
       h: size.h,
-      shiftX: sx - frame.sx,
-      shiftY: sy - frame.sy,
+      shiftX: Math.round(shift.x || 0),
+      shiftY: Math.round(shift.y || 0),
     };
   }
 
-  function setUnrestrictedShift(frameId, shift) {
+  function setOutputPlacementShift(frameId, shift) {
     const normalized = {
       x: Math.round(shift.x || 0),
       y: Math.round(shift.y || 0),
@@ -23,10 +21,35 @@
     else state.frameShifts.set(frameId, normalized);
   }
 
-  getSourceRect = unrestrictedSourceRect;
-  setShift = setUnrestrictedShift;
+  function drawFrameWithPlacementOffset(ctx, frame, dx, dy, scale = 1) {
+    if (!state.image || !frame) return;
 
-  nudgeSingleFrame = function nudgeSingleFrameUnrestricted(id, dx, dy) {
+    const rect = adjustedFrameRect(frame);
+    const shift = getShift(frame.id);
+    const sourceX = Math.max(0, frame.sx);
+    const sourceY = Math.max(0, frame.sy);
+    const sourceW = Math.max(0, Math.min(frame.w, state.image.naturalWidth - sourceX));
+    const sourceH = Math.max(0, Math.min(frame.h, state.image.naturalHeight - sourceY));
+    if (sourceW <= 0 || sourceH <= 0) return;
+
+    ctx.drawImage(
+      state.image,
+      sourceX,
+      sourceY,
+      sourceW,
+      sourceH,
+      dx + Math.round(shift.x || 0) * scale,
+      dy + Math.round(shift.y || 0) * scale,
+      sourceW * scale,
+      sourceH * scale,
+    );
+  }
+
+  getSourceRect = adjustedFrameRect;
+  setShift = setOutputPlacementShift;
+  drawFrameImage = drawFrameWithPlacementOffset;
+
+  nudgeSingleFrame = function nudgeSingleFrameOutputPlacement(id, dx, dy) {
     const frame = getFrame(id);
     if (!frame) return;
     const current = getShift(id);
@@ -36,7 +59,7 @@
     });
   };
 
-  nudgeSelectedFrames = function nudgeSelectedFramesUnrestricted(dx, dy) {
+  nudgeSelectedFrames = function nudgeSelectedFramesOutputPlacement(dx, dy) {
     const ids = getActiveFrameIds();
     if (!ids.length) return setStatus('위치를 조정할 프레임을 먼저 선택하세요.');
 
@@ -55,9 +78,11 @@
     drawSource();
     drawPreview(first);
     updateInfoDisplays();
-    setStatus(`${ids.length}개 위치 보정: 프레임 박스 크기는 유지`);
+    setStatus(`${ids.length}개 위치 보정: 출력 위치에 적용`);
   };
 
   updateInfoDisplays();
+  renderOutput();
+  drawSource();
   if (state.lastPreviewFrame) drawPreview(state.lastPreviewFrame);
 })();
