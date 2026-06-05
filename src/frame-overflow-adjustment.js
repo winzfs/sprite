@@ -1,5 +1,5 @@
 (() => {
-  function adjustedFrameRect(frame) {
+  function outputFrameRect(frame) {
     const size = getBoxSize(frame);
     const shift = getShift(frame.id);
     return {
@@ -21,33 +21,46 @@
     else state.frameShifts.set(frameId, normalized);
   }
 
-  function drawFrameWithPlacementOffset(ctx, frame, dx, dy, scale = 1) {
+  function drawFrameWithShiftSampling(ctx, frame, dx, dy, scale = 1) {
     if (!state.image || !frame) return;
 
-    const rect = adjustedFrameRect(frame);
+    const rect = outputFrameRect(frame);
     const shift = getShift(frame.id);
-    const sourceX = Math.max(0, frame.sx);
-    const sourceY = Math.max(0, frame.sy);
-    const sourceW = Math.max(0, Math.min(frame.w, state.image.naturalWidth - sourceX));
-    const sourceH = Math.max(0, Math.min(frame.h, state.image.naturalHeight - sourceY));
-    if (sourceW <= 0 || sourceH <= 0) return;
+    const shiftX = Math.round(shift.x || 0);
+    const shiftY = Math.round(shift.y || 0);
+
+    const wantX = frame.sx - shiftX;
+    const wantY = frame.sy - shiftY;
+    const wantW = rect.w;
+    const wantH = rect.h;
+
+    const srcX = Math.max(0, wantX);
+    const srcY = Math.max(0, wantY);
+    const srcRight = Math.min(state.image.naturalWidth, wantX + wantW);
+    const srcBottom = Math.min(state.image.naturalHeight, wantY + wantH);
+    const srcW = Math.max(0, srcRight - srcX);
+    const srcH = Math.max(0, srcBottom - srcY);
+    if (srcW <= 0 || srcH <= 0) return;
+
+    const outX = dx + (srcX - wantX) * scale;
+    const outY = dy + (srcY - wantY) * scale;
 
     ctx.drawImage(
       state.image,
-      sourceX,
-      sourceY,
-      sourceW,
-      sourceH,
-      dx + Math.round(shift.x || 0) * scale,
-      dy + Math.round(shift.y || 0) * scale,
-      sourceW * scale,
-      sourceH * scale,
+      srcX,
+      srcY,
+      srcW,
+      srcH,
+      outX,
+      outY,
+      srcW * scale,
+      srcH * scale,
     );
   }
 
-  getSourceRect = adjustedFrameRect;
+  getSourceRect = outputFrameRect;
   setShift = setOutputPlacementShift;
-  drawFrameImage = drawFrameWithPlacementOffset;
+  drawFrameImage = drawFrameWithShiftSampling;
 
   nudgeSingleFrame = function nudgeSingleFrameOutputPlacement(id, dx, dy) {
     const frame = getFrame(id);
@@ -78,7 +91,7 @@
     drawSource();
     drawPreview(first);
     updateInfoDisplays();
-    setStatus(`${ids.length}개 위치 보정: 출력 위치에 적용`);
+    setStatus(`${ids.length}개 위치 보정: 출력 미리보기에 적용`);
   };
 
   updateInfoDisplays();
