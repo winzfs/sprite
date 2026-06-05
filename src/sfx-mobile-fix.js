@@ -13,6 +13,8 @@
     style.textContent = `
       html, body { max-width:100%; overflow-x:hidden; }
       #view-sfxMaker, #view-sfxMaker * { box-sizing:border-box; }
+      #view-sfxMaker:not(.active) .sfx-transport { display:none !important; }
+      #view-sfxMaker:not(.active) [class*='transport'] { display:none !important; }
       #view-sfxMaker { width:100%; max-width:100vw; min-height:100vh; overflow-x:hidden; background:#090d14; }
       #view-sfxMaker .sfx-app { width:100%; max-width:1320px; min-width:0; margin:0 auto; padding:14px; }
       #view-sfxMaker .sfx-hero, #view-sfxMaker .sfx-card { min-width:0; border:1px solid rgba(255,255,255,.08); background:#101622; box-shadow:none; }
@@ -47,6 +49,8 @@
       body.${DRAGGING_CLASS} { overscroll-behavior:contain; }
 
       @media (max-width:960px) {
+        #view-sfxMaker:not(.active) .sfx-transport,
+        #view-sfxMaker:not(.active) [class*='transport'] { display:none !important; visibility:hidden !important; pointer-events:none !important; }
         .main-content, .tool-view.active, #view-sfxMaker, #view-sfxMaker .sfx-app, #view-sfxMaker .sfx-main-grid, #view-sfxMaker .sfx-card, #view-sfxMaker .sfx-hero, #view-sfxMaker section, #view-sfxMaker div { max-width:100%; min-width:0; }
         #view-sfxMaker .sfx-app { display:flex; flex-direction:column; gap:8px; padding:6px; padding-bottom:74px; overflow-x:hidden; }
 
@@ -56,7 +60,7 @@
         #view-sfxMaker .sfx-hero h1 { margin:2px 0 0; font-size:18px; line-height:1.05; }
         #view-sfxMaker .sfx-hero p { display:none; }
 
-        #view-sfxMaker .sfx-transport, #view-sfxMaker [class*='transport'] { position:fixed; left:8px; right:8px; bottom:8px; z-index:90; display:grid !important; grid-template-columns:1.25fr .75fr .9fr; gap:6px; width:auto; padding:7px; border:1px solid rgba(255,255,255,.1); border-radius:16px; background:rgba(10,15,24,.96); box-shadow:0 10px 28px rgba(0,0,0,.35); backdrop-filter:blur(14px); }
+        #view-sfxMaker.active .sfx-transport, #view-sfxMaker.active [class*='transport'] { position:fixed; left:8px; right:8px; bottom:8px; z-index:90; display:grid !important; grid-template-columns:1.25fr .75fr .9fr; gap:6px; width:auto; padding:7px; border:1px solid rgba(255,255,255,.1); border-radius:16px; background:rgba(10,15,24,.96); box-shadow:0 10px 28px rgba(0,0,0,.35); backdrop-filter:blur(14px); }
         #view-sfxMaker .sfx-big-button, #view-sfxMaker [class*='transport'] button { width:100%; min-height:38px; padding:7px 8px; border-radius:11px; font-size:12px; white-space:nowrap; }
 
         #view-sfxMaker .sfx-main-grid { order:1; display:flex !important; flex-direction:column; gap:8px; width:100%; overflow:visible; }
