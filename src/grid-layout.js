@@ -46,7 +46,8 @@ function loadScriptOnce(src, dataKey) {
 function loadBackgroundRemoverHelpers() {
   return Promise.resolve()
     .then(() => loadScriptOnce('src/background-remover-autopan.js?v=2', 'background-remover-autopan'))
-    .then(() => loadScriptOnce('src/background-remover-restore-brush.js?v=1', 'background-remover-restore-brush'));
+    .then(() => loadScriptOnce('src/background-remover-restore-brush.js?v=1', 'background-remover-restore-brush'))
+    .then(() => loadScriptOnce('src/background-remover-dark-color-fix.js?v=1', 'background-remover-dark-color-fix'));
 }
 
 function loadMediaToolHelpers() {
